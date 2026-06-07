@@ -5,6 +5,9 @@
 The goal of this project is to automate the process of tether downgrading the iPhone 5s.
 
 Third-party software licenses can be found in the THIRD_PARTY_LICENSES directory.
+IMPORTANT
+img4lib and kerneldiff MUST BE COMPILED and placed in bin2boot, and bin for this to work!!
+
 
 ---
 
