@@ -576,7 +576,7 @@ build_modified_ipsw() {
 
     echo -e "${YELLOW}Modified IPSW builder:${NC}"
     echo
-    echo "This creates bin/ios7.ipsw from user-supplied IPSWs."
+    echo "This creates bin/ios7.ipsw from ipsws."
     echo
     echo "Supported targets:"
     echo " - iOS 7.0.6"
@@ -1006,7 +1006,7 @@ full_restore_and_boot() {
     echo -e "${RED}FULL FLOW${NC}"
     echo
     echo "This will:"
-    echo " 1) Build modified IPSW from user-supplied iOS 7.x + iOS 12.5.8 IPSWs"
+    echo " 1) Build modified IPSW from iOS 7.x + iOS 12.5.8 IPSWs"
     echo " 2) Restore generated bin/ios7.ipsw"
     echo " 3) Ask for SHSH2 blob"
     echo " 4) Build tethered boot files"
