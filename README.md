@@ -1,12 +1,22 @@
 # 5sd7
 
+> [!IMPORTANT]
+> **img4lib (`img4`) and kerneldiff are NOT included with this project.**
+>
+> These tools **must be compiled manually** and placed in both:
+>
+> * `bin/`
+> * `bin2boot/`
+>
+> 5sd7 **will not function correctly without them.**
+>
+> They are not bundled due to licensing uncertainty.
+
 **5sd7 (5s Downgrade 7)** is a utility for creating, restoring, and tether-booting iOS 7 on the iPhone 5s.
 
 The goal of this project is to automate the process of tether downgrading the iPhone 5s.
 
-Third-party software licenses can be found in the THIRD_PARTY_LICENSES directory.
-IMPORTANT
-img4lib and kerneldiff MUST BE COMPILED and placed in bin2boot, and bin for this to work!!
+Third-party software licenses can be found in the `THIRD_PARTY_LICENSES` directory.
 
 
 ---
