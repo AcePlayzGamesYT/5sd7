@@ -1036,7 +1036,7 @@ full_restore_and_boot() {
 about_screen() {
     header
 
-    echo "This tool builds a modified restore IPSW locally from user-supplied IPSWs."
+    echo "This tool builds a modified restore IPSW locally from IPSWs."
     echo
     echo "Supported devices:"
     echo " - iPhone 5s GSM  / iPhone6,1 / n51ap"
@@ -1099,7 +1099,7 @@ main_menu() {
         echo "Menu"
         echo "----"
         echo "1) Return Everything To Normal"
-        echo "2) Build Modified IPSW From User IPSWs"
+        echo "2) Build Modified IPSW from IPSWs"
         echo "3) Restore Generated Modified IPSW"
         echo "4) Build Tethered Boot Files"
         echo "5) Tethered Boot Device"
