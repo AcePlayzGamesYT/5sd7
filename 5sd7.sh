@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 #########################################
-# iPhone 5s iOS 7.x Tethered Tool
-# GSM/CDMA IPSW Builder + Restore + Boot
+# iphone 5s ios 7.x tether dg
+# gsm/cdma ipsw builder + restore + boot
 #########################################
 
 VERSION="1.0"
 
 #########################################
-# Colors
+# colors
 #########################################
 
 RED='\033[0;31m'
@@ -19,7 +19,7 @@ PURPLE='\033[0;35m'
 NC='\033[0m'
 
 #########################################
-# Paths
+# paths
 #########################################
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,11 +29,11 @@ ENC_KEYS="$SCRIPT_DIR/enc_keys"
 WORK="$SCRIPT_DIR/work"
 STATE_FILE="$SCRIPT_DIR/.5sd7_state"
 
-# The generated modified IPSW gets written here because restore_ios7 already expects bin/ios7.ipsw
+
 IOS7_IPSW="$BIN/ios7.ipsw"
 
 #########################################
-# Runtime target vars
+# target vars for runtime
 #########################################
 
 TARGET_IOS=""
@@ -53,7 +53,7 @@ IOS7_RESTORERAMDISK_FILENAME=""
 IOS12_RESTORERAMDISK_FILENAME=""
 
 #########################################
-# UI helpers
+# ui
 #########################################
 
 pause() {
@@ -125,16 +125,16 @@ read_drag_path() {
 
     read -ep "$prompt" out
 
-    # Remove surrounding quotes if Terminal added them
+    # iff quotes added, remove
     out="${out%\"}"
     out="${out#\"}"
     out="${out%\'}"
     out="${out#\'}"
 
-    # Expand ~
+    # expand the ~
     out="${out/#\~/$HOME}"
 
-    # Remove accidental trailing spaces
+    # remove trailing spaces if any
     out="$(printf "%s" "$out" | sed 's/[[:space:]]*$//')"
 
     printf "%s" "$out"
@@ -211,7 +211,7 @@ load_state() {
 }
 
 #########################################
-# Safety / setup checks
+# checks
 #########################################
 
 check_base_layout() {
@@ -262,7 +262,7 @@ make_executable() {
 }
 
 #########################################
-# Target selection
+# selectrion
 #########################################
 
 select_target() {
@@ -310,7 +310,6 @@ select_target() {
             TARGET_IOS_DISPLAY="7.0.6"
             ;;
         2)
-            # enc_keys uses 7.1, but the menu says 7.1.0
             TARGET_IOS="7.1"
             TARGET_IOS_DISPLAY="7.1.0"
             ;;
@@ -336,7 +335,7 @@ select_target() {
 }
 
 #########################################
-# Find IPSW files
+# ipsw pathfind
 #########################################
 
 find_ios_component_paths() {
@@ -359,23 +358,23 @@ find_ios_component_paths() {
 find_ios12_destination_paths() {
     local dst="$1"
 
-    # iOS 12.5.8 uses a different layout/name for iBSS/iBEC than iOS 7.
-    # iOS 7:  Firmware/dfu/iBSS.n51ap.RELEASE.im4p or iBSS.n53ap.RELEASE.im4p
-    # iOS 12: Firmware/dfu/iBSS.iphone6.RELEASE.im4p and iBEC.iphone6.RELEASE.im4p
+    # 12.5.8 uses a different setup for ibss and ibec than 7.
+    # 7:  Firmware/dfu/iBSS.n51ap.RELEASE.im4p or iBSS.n53ap.RELEASE.im4p
+    # 12: Firmware/dfu/iBSS.iphone6.RELEASE.im4p and iBEC.iphone6.RELEASE.im4p
     IOS12_IBSS_IM4P="$(first_file "$dst/Firmware/dfu" -name "iBSS.iphone6.RELEASE.im4p")"
     IOS12_IBEC_IM4P="$(first_file "$dst/Firmware/dfu" -name "iBEC.iphone6.RELEASE.im4p")"
 
-    # iOS 12 DeviceTree is directly in Firmware/all_flash, not inside all_flash.n51ap.production.
+    #  12 dtre is directly in Firmware/all_flash, not inside all_flash.n51ap.production.
     # GSM  = DeviceTree.n51ap.im4p
     # CDMA = DeviceTree.n53ap.im4p
     IOS12_DEVICETREE_IM4P="$(first_file "$dst/Firmware/all_flash" -name "DeviceTree.${BOARD}.im4p")"
 
-    # iOS 12.5.8 uses one shared iPhone 5s kernelcache name in the IPSW root.
-    # It is normally kernelcache.release.iphone6, even when the target board is n51ap/n53ap.
-    # Do NOT search for n51/n53 here; that is only for the iOS 7 source kernelcache.
+    #  12.5.8 uses a shared 5s kernjelcache name in the ipsw root.
+    #   normally kernelcache.release.iphone6, even when the target board is n51ap or n53ap.
+    # dont search for n51 or n53 here. that is only for the ios 7 source kernelcache.
     IOS12_KCACHE_IM4P="$(first_file "$dst" -name "kernelcache.release.iphone6*")"
 
-    # Fallback: if Apple ever names it slightly differently, grab the only root kernelcache.
+    # fallback
     if [[ -z "$IOS12_KCACHE_IM4P" ]]; then
         IOS12_KCACHE_IM4P="$(first_file "$dst" -maxdepth 1 -name "kernelcache.release.*")"
     fi
@@ -428,12 +427,12 @@ find_rootfs_dmg() {
     local dir="$1"
     local restore_ramdisk_name="$2"
 
-    # RootFS is normally the big dmg in the IPSW root. Exclude the restore ramdisk filename.
+    # exlcude the restore ramdisk filename.
     find "$dir" -maxdepth 1 -type f -name "*.dmg" ! -name "$restore_ramdisk_name" -exec ls -S {} + 2>/dev/null | head -n 1
 }
 
 #########################################
-# Option 1: Return to normal
+# opt 1: return to normal
 #########################################
 
 return_to_normal() {
@@ -471,7 +470,7 @@ return_to_normal() {
 }
 
 #########################################
-# pwnDFU helper
+# pwn dfu helper
 #########################################
 
 run_with_timeout() {
@@ -516,7 +515,7 @@ pwn_dfu_loop() {
     echo
     warn "Put the iPhone 5s into DFU mode now."
     warn "This will retry gaster pwn until it succeeds."
-    warn "If gaster hangs on second SPRAY, it will auto-kill and retry."
+    warn "If gaster hangs, it will auto kill and retry."
     echo
     read -rp "Press Enter when the device is in DFU..."
 
@@ -567,7 +566,7 @@ pwn_dfu_loop() {
 }
 
 #########################################
-# Option 2: Build modified IPSW
+# opt2: build modded ipsw
 #########################################
 
 build_modified_ipsw() {
@@ -728,7 +727,7 @@ PATCH_RESULT=$?
 if [[ "$PATCH_RESULT" -ne 0 || "$PATCH_COUNT" -eq 0 ]]; then
     error "REQUIRED DeviceTree patch failed."
     error "Could not find content-protect in devicetree.raw."
-    error "Restore will hang at creating system keybags if this is not patched."
+    error "Resotre will hang at creating system keybags if this is not patched."
     echo
     echo "Debug:"
     echo "  File: $(pwd)/devicetree.raw"
@@ -775,7 +774,7 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
 }
 
 #########################################
-# Option 3: Restore generated IPSW
+# opt 3: restore generated ipsw
 #########################################
 
 restore_ios7() {
@@ -830,7 +829,7 @@ restore_ios7() {
 }
 
 #########################################
-# SHSH selection
+# shsh selecrt
 #########################################
 
 select_shsh() {
@@ -861,7 +860,7 @@ select_shsh() {
 }
 
 #########################################
-# Option 4: Build tethered boot files
+# opt 4: build tethered boot files
 #########################################
 
 build_boot_files() {
@@ -946,7 +945,7 @@ build_boot_files() {
 }
 
 #########################################
-# Option 5: Tethered boot
+# opt 5: tehthered boot
 #########################################
 
 tethered_boot() {
@@ -996,7 +995,7 @@ tethered_boot() {
 }
 
 #########################################
-# Option 6: Full automatic flow
+# opt 6: automatic full
 #########################################
 
 full_restore_and_boot() {
@@ -1031,7 +1030,7 @@ full_restore_and_boot() {
 }
 
 #########################################
-# Info screen
+# info gui
 #########################################
 
 about_screen() {
@@ -1080,7 +1079,7 @@ about_screen() {
 }
 
 #########################################
-# Main menu
+# main menui
 #########################################
 
 main_menu() {
