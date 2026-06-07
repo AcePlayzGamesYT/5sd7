@@ -449,7 +449,7 @@ return_to_normal() {
         return
     fi
 
-    info "Removing generated work folder..."
+       info "Removing generated work folder..."
     rm -rf "$WORK"
 
     info "Removing state file..."
@@ -457,6 +457,12 @@ return_to_normal() {
 
     info "Removing generated modified IPSW..."
     rm -f "$IOS7_IPSW"
+
+    info "Removing ios7 folder from bin2boot..."
+    rm -rf "$BOOT/ios7"
+
+    info "Removing ios7 folder from bin..."
+    rm -rf "$BIN/ios7"
 
     if [[ -d "$BIN" ]]; then
         info "Resetting bin2boot from bin..."
