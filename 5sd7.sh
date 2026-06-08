@@ -822,6 +822,14 @@ restore_ios7() {
     info "Waiting 10 seconds..."
     sleep 10
 
+if [[ -d "ios7" ]]; then
+
+        info "Removing idevicerestore cached filesystem..."
+
+        rm -rf ios7
+
+    fi
+
     info "Starting idevicerestore erase restore..."
     warn "You may be asked for your Mac password because this uses sudo."
     run_cmd sudo ./idevicerestore -e ios7.ipsw || {
