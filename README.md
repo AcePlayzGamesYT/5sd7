@@ -146,7 +146,7 @@ This software is provided as-is with no warranty of any kind.
 
 Use this software entirely at your own risk.
 
-The author is not responsible for:
+ I am not responsible for:
 
 * Bricked devices
 * Boot loops
