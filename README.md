@@ -51,7 +51,7 @@ Versions below iOS 7.0.6 and above iOS 7.1.2 are not supported.
 ### Confirmed Working
 
 * GSM (iPhone6,1 / n51ap) → iOS 7.1.2
-
+* CDMA (iPhone6,2 / n53ap) → iOS 7.1.2
 ### Very Likely Working
 
 The following configurations use the exact same workflow and patching process but have not yet been personally tested:
@@ -59,15 +59,9 @@ The following configurations use the exact same workflow and patching process bu
 * GSM (iPhone6,1 / n51ap) → iOS 7.0.6
 * GSM (iPhone6,1 / n51ap) → iOS 7.1
 * GSM (iPhone6,1 / n51ap) → iOS 7.1.1
-
-### Untested
-
-The following configurations have not been tested:
-
 * CDMA (iPhone6,2 / n53ap) → iOS 7.0.6
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1.1
-* CDMA (iPhone6,2 / n53ap) → iOS 7.1.2
 
 ---
 
