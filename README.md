@@ -1,4 +1,4 @@
-# 5sd7
+# 5sd7 Tethered Downgrade Tool for iPhone 5s iOS 7.0.6 through 8.0
 
 > [!IMPORTANT]
 > **img4lib (`img4`) and kerneldiff are NOT included with this project.**
