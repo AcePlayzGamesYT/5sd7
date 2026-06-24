@@ -23,8 +23,8 @@ Third-party software licenses can be found in the `THIRD_PARTY_LICENSES` directo
 
 ## Features
 
-This tool only supports iOS 7.0.6 through 7.1.2.
-Versions below iOS 7.0.6 and above iOS 7.1.2 are not supported.
+This tool only supports iOS 7.0.6 through 8.0.
+Versions below iOS 7.0.6 and above iOS 8.0 are not supported.
 * Supports iPhone 5s GSM (iPhone6,1 / n51ap)
 * Supports iPhone 5s CDMA (iPhone6,2 / n53ap)
 * Supports:
@@ -33,6 +33,7 @@ Versions below iOS 7.0.6 and above iOS 7.1.2 are not supported.
   * iOS 7.1
   * iOS 7.1.1
   * iOS 7.1.2
+  * iOS 8.0
 * Automatic IPSW extraction
 * Automatic root filesystem replacement
 * Automatic iBSS patching
@@ -51,6 +52,7 @@ Versions below iOS 7.0.6 and above iOS 7.1.2 are not supported.
 ### Confirmed Working
 
 * GSM (iPhone6,1 / n51ap) → iOS 7.1.2
+* * GSM (iPhone6,1 / n51ap) → iOS 8.0
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1.2
 ### Very Likely Working
 
@@ -62,6 +64,7 @@ The following configurations use the exact same workflow and patching process bu
 * CDMA (iPhone6,2 / n53ap) → iOS 7.0.6
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1.1
+*  * CDMA (iPhone6,2 / n53ap) → iOS 8.0
 
 ---
 
@@ -85,7 +88,7 @@ Apple Silicon compatibility is currently unknown.
 
 You must provide:
 
-* Target iOS 7 IPSW
+* Target iOS 7/8 IPSW
 * iOS 12.5.8 IPSW 
 * SHSH2 blob for iOS 12.5.8 (The SHSH2 blob used must correspond to the device being restored and must be for iOS 12.5.8.)
 
@@ -112,6 +115,7 @@ The following tools are NOT included:
 
 * img4 (img4lib)
 * kerneldiff
+* dsc64patcher
 
 These tools must be obtained and compiled separately, then the binaries placed in bin and bin2boot.
 
