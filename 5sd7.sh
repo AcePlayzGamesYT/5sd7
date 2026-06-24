@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 #########################################
-# iphone 5s ios 7.x tether dg
+# iphone 5s ios 7.x 8.0 tether dg
 # gsm/cdma ipsw builder + restore + boot
 #########################################
 
-VERSION="1.0"
+VERSION="1.1"
 
 #########################################
 # colors 
@@ -65,7 +65,7 @@ header() {
     clear
     echo -e "${BLUE}"
     echo "================================================"
-    echo " iPhone 5s iOS 7.x Tethered Downgrade Tool"
+    echo " iPhone 5s iOS 7.x/8.0 Tethered Downgrade Tool"
     echo " Version $VERSION"
     echo "================================================"
     echo -e "${NC}"
@@ -183,6 +183,16 @@ load_keys_for_target() {
     IOS12_RESTORERAMDISK_FILENAME="$(require_enc_value "$DEVICE_TYPE" "12.5.8" "RESTORERAMDISK_FILENAME")"
 }
 
+check_dsc64patcher_for_target() {
+    if [[ "$TARGET_IOS" == 8.* ]]; then
+        check_file "$BOOT/dsc64patcher"
+    else
+        if [[ ! -f "$BOOT/dsc64patcher" ]]; then
+            warn "dsc64patcher missing. This is OK for iOS 7, but iOS 8 support needs it."
+        fi
+    fi
+}
+
 save_state() {
     {
         printf 'TARGET_IOS=%q\n' "$TARGET_IOS"
@@ -258,6 +268,7 @@ make_executable() {
     chmod +x "$BOOT/ipatcher" 2>/dev/null
     chmod +x "$BOOT/Kernel64Patcher" 2>/dev/null
     chmod +x "$BOOT/kerneldiff" 2>/dev/null
+    chmod +x "$BOOT/dsc64patcher" 2>/dev/null
     chmod +x "$BOOT/5sboot.sh" 2>/dev/null
 }
 
@@ -301,6 +312,7 @@ select_target() {
     echo "2) iOS 7.1.0"
     echo "3) iOS 7.1.1"
     echo "4) iOS 7.1.2"
+    echo "5) iOS 8.0"
     echo
     read -rp "Choice: " ios_choice
 
@@ -321,6 +333,10 @@ select_target() {
             TARGET_IOS="7.1.2"
             TARGET_IOS_DISPLAY="7.1.2"
             ;;
+        5)
+            TARGET_IOS="8.0"
+            TARGET_IOS_DISPLAY="8.0"
+            ;;
         *)
             error "Invalid iOS selection."
             pause
@@ -329,6 +345,7 @@ select_target() {
     esac
 
     load_keys_for_target
+    check_dsc64patcher_for_target
 
     success "Selected $DEVICE_TYPE / $BOARD / iOS $TARGET_IOS_DISPLAY"
     return 0
@@ -343,6 +360,14 @@ find_ios_component_paths() {
 
     IBSS_IM4P="$(first_file "$src/Firmware/dfu" -name "iBSS.${BOARD}*.im4p")"
     IBEC_IM4P="$(first_file "$src/Firmware/dfu" -name "iBEC.${BOARD}*.im4p")"
+
+    if [[ -z "$IBSS_IM4P" ]]; then
+        IBSS_IM4P="$(first_file "$src/Firmware/dfu" -name "iBSS.${BOARD_SHORT}*.im4p")"
+    fi
+
+    if [[ -z "$IBEC_IM4P" ]]; then
+        IBEC_IM4P="$(first_file "$src/Firmware/dfu" -name "iBEC.${BOARD_SHORT}*.im4p")"
+    fi
     DEVICETREE_IM4P="$(first_file "$src/Firmware/all_flash" -path "*all_flash.${BOARD}.production/DeviceTree.${BOARD}.im4p")"
     KCACHE_IM4P="$(first_file "$src" -name "kernelcache.release.${BOARD_SHORT}*")"
 
@@ -589,12 +614,13 @@ build_modified_ipsw() {
     echo " - iOS 7.1.0"
     echo " - iOS 7.1.1"
     echo " - iOS 7.1.2"
+    echo " - iOS 8.0"
     echo
     echo "Supported boards:"
     echo " - GSM  = n51ap"
     echo " - CDMA = n53ap"
     echo
-    echo "Unsupported: below 7.0.6, iOS 8+, iPhone 5c, and other devices."
+    echo "Unsupported: below 7.0.6, iOS 8.0.1+, iPhone 5c, and other devices."
     echo
     read -rp "Continue? Type YES: " confirm
 
@@ -663,7 +689,7 @@ build_modified_ipsw() {
     rm -rf "$IOS12_MOD_DIR"
     cp -R "$IOS12_EXTRACT_DIR" "$IOS12_MOD_DIR"
 
-    info "Finding iOS 7 source components for $BOARD..."
+    info "Finding target iOS source components for $BOARD..."
     find_ios_component_paths "$IOS7_SRC_DIR"
 
     info "Finding iOS 12 destination components for $BOARD..."
@@ -672,11 +698,11 @@ build_modified_ipsw() {
     IOS7_ROOTFS="$(find_rootfs_dmg "$IOS7_SRC_DIR" "$IOS7_RESTORERAMDISK_FILENAME")"
     IOS12_ROOTFS="$(find_rootfs_dmg "$IOS12_MOD_DIR" "$IOS12_RESTORERAMDISK_FILENAME")"
 
-    if [[ -z "$IOS7_ROOTFS" ]]; then die "Could not find iOS 7 root filesystem DMG"; fi
+    if [[ -z "$IOS7_ROOTFS" ]]; then die "Could not find target iOS root filesystem DMG"; fi
     if [[ -z "$IOS12_ROOTFS" ]]; then die "Could not find iOS 12 root filesystem DMG"; fi
 
-    info "Replacing iOS 12 root filesystem with iOS 7 root filesystem..."
-    echo "iOS 7 RootFS:  $IOS7_ROOTFS"
+    info "Replacing iOS 12 root filesystem with target iOS root filesystem..."
+    echo "Target RootFS: $IOS7_ROOTFS"
     echo "iOS 12 RootFS: $IOS12_ROOTFS"
     cp "$IOS7_ROOTFS" "$IOS12_ROOTFS"
 
@@ -754,7 +780,11 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
     run_cmd "$BOOT/img4" -i "$KCACHE_IM4P" -o kcache.im4p -k "$KCACHE_KEY" -D || return
 
     info "Patching kernelcache..."
-    run_cmd "$BOOT/Kernel64Patcher" kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
+    if [[ "$TARGET_IOS" == 8.* ]]; then
+        run_cmd "$BOOT/Kernel64Patcher" kcache.raw kcache.patched -u 8 -t -p -e 8 -f 8 -a -m 8 -g -s -d || return
+    else
+        run_cmd "$BOOT/Kernel64Patcher" kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
+    fi
 
     info "Creating kernel binary patch..."
     run_cmd "$BOOT/kerneldiff" kcache.raw kcache.patched kcache.bpatch || return
@@ -762,7 +792,7 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
     info "Applying kernel patch to iOS 12 IPSW destination kernelcache without signing..."
     run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn || return
 
-    info "Decrypting iOS 7 restore ramdisk into iOS 12 restore ramdisk destination..."
+    info "Decrypting target iOS restore ramdisk into iOS 12 restore ramdisk destination..."
     run_cmd "$BOOT/img4" -i "$IOS7_RESTORERAMDISK" -o "$IOS12_RESTORERAMDISK" -k "$RESTORERAMDISK_KEY" -D || return
 
     info "Zipping modified IPSW..."
@@ -839,6 +869,12 @@ if [[ -d "ios7" ]]; then
     }
 
     success "Restore command finished."
+
+    if [[ "$TARGET_IOS" == 8.* ]]; then
+        warn "iOS 8 restore needs dyld shared cache patched before normal setup/boot."
+        warn "Use dsc64patcher with an SSH ramdisk before tethered boot."
+    fi
+
     pause
 }
 
@@ -886,6 +922,8 @@ build_boot_files() {
         return
     fi
 
+    check_dsc64patcher_for_target
+
     echo -e "${YELLOW}Boot file builder:${NC}"
     echo "This builds patched iBSS, iBEC, DeviceTree, and Kernelcache."
     echo
@@ -918,7 +956,11 @@ build_boot_files() {
     run_cmd ./ipatcher iBSS.dec iBSS.patched || return
 
     info "Patching iBEC with tethered boot args..."
-    run_cmd ./ipatcher iBEC.dec iBEC.patched -b "-v rd=disk0s1s1" || return
+    if [[ "$TARGET_IOS" == 8.* ]]; then
+        run_cmd ./ipatcher iBEC.dec iBEC.patched -b "-v rd=disk0s1s1 amfi=0xff cs_enforcement_disable=1 keepsyms=1 debug=0x2014e wdt=-1 PE_i_can_has_debugger=1 amfi_get_out_of_my_way=0x1 amfi_unrestrict_task_for_pid=0x0" || return
+    else
+        run_cmd ./ipatcher iBEC.dec iBEC.patched -b "-v rd=disk0s1s1" || return
+    fi
 
     info "Building iBSS.img4..."
     run_cmd ./img4 -i iBSS.patched -o iBSS.img4 -A -T ibss -M im4m || return
@@ -939,7 +981,11 @@ build_boot_files() {
     run_cmd ./img4 -i "$KCACHE_IM4P" -o kcache.im4p -k "$KCACHE_KEY" -D || return
 
     info "Patching kernelcache..."
-    run_cmd ./Kernel64Patcher kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
+    if [[ "$TARGET_IOS" == 8.* ]]; then
+        run_cmd ./Kernel64Patcher kcache.raw kcache.patched -u 8 -t -p -e 8 -f 8 -a -m 8 -g -s -d || return
+    else
+        run_cmd ./Kernel64Patcher kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
+    fi
 
     info "Creating kernel binary patch..."
     run_cmd ./kerneldiff kcache.raw kcache.patched kcache.bpatch || return
@@ -1008,6 +1054,86 @@ tethered_boot() {
     pause
 }
 
+
+#########################################
+# opt 6: patch ios 8 dyld
+#########################################
+
+patch_ios8_dyld() {
+    header
+    make_executable
+
+    if ! load_state; then
+        return
+    fi
+
+    if [[ "$TARGET_IOS" != "8.0" ]]; then
+        error "dyld patching is only required for iOS 8.0."
+        pause
+        return
+    fi
+
+    check_file "$BOOT/dsc64patcher"
+
+    command -v git >/dev/null 2>&1 || die "git is required for iOS 8 support"
+
+    if [[ ! -d "$BOOT/SSHRD_Script" ]]; then
+        info "SSHRD_Script not found. Cloning..."
+
+        run_cmd git clone https://github.com/iPh0ne4s/SSHRD_Script --recursive "$BOOT/SSHRD_Script" || {
+            error "Failed to clone SSHRD_Script."
+            return
+        }
+    fi
+
+    check_file "$BOOT/SSHRD_Script/sshrd.sh"
+    chmod +x "$BOOT/SSHRD_Script/sshrd.sh"
+
+    cd "$BOOT/SSHRD_Script" || die "Could not cd to SSHRD_Script"
+
+    info "Creating SSH ramdisk..."
+    run_cmd ./sshrd.sh 12.0 || return
+
+    info "Booting SSH ramdisk..."
+    run_cmd ./sshrd.sh boot || return
+
+    info "Waiting for ramdisk to boot..."
+    sleep 15
+
+    info "Starting iproxy..."
+    pkill -f "iproxy 2222 22" 2>/dev/null
+    iproxy 2222 22 >/dev/null 2>&1 &
+    sleep 5
+
+    info "Clearing old SSH host keys..."
+    ssh-keygen -R "[localhost]:2222" >/dev/null 2>&1
+    ssh-keygen -R "localhost" >/dev/null 2>&1
+
+    info "Testing SSH connection..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost "echo SSH_OK" || return
+
+    info "Mounting root filesystem..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost "/sbin/mount_hfs /dev/disk0s1s1 /mnt1" || return
+
+    info "Downloading dyld shared cache..."
+    scp -P2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost:/mnt1/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64 dyld.raw || return
+
+    info "Patching dyld shared cache..."
+    run_cmd "$BOOT/dsc64patcher" dyld.raw dyld.patched -8 || return
+
+    info "Uploading patched dyld shared cache..."
+    scp -P2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dyld.patched root@localhost:/mnt1/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64 || return
+
+    info "Unmounting filesystem..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost "/sbin/umount /mnt1"
+
+    info "Rebooting device..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost "/sbin/reboot"
+
+    success "iOS 8 dyld shared cache patched."
+    pause
+}
+
 #########################################
 # opt 6: automatic full
 #########################################
@@ -1020,14 +1146,14 @@ full_restore_and_boot() {
     echo -e "${RED}FULL FLOW${NC}"
     echo
     echo "This will:"
-    echo " 1) Build modified IPSW from iOS 7.x + iOS 12.5.8 IPSWs"
+    echo " 1) Build modified IPSW from target iOS + iOS 12.5.8 IPSWs"
     echo " 2) Restore generated bin/ios7.ipsw"
     echo " 3) Ask for SHSH2 blob"
     echo " 4) Build tethered boot files"
     echo " 5) Enter pwnDFU again"
     echo " 6) Run 5sboot.sh"
     echo
-    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2.${NC}"
+    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2 and 8.0.${NC}"
     echo
     read -rp "Start full flow? Type YES: " confirm
 
@@ -1039,6 +1165,11 @@ full_restore_and_boot() {
 
     build_modified_ipsw
     restore_ios7
+
+    if [[ "$TARGET_IOS" == "8.0" ]]; then
+        patch_ios8_dyld
+    fi
+
     build_boot_files
     tethered_boot
 }
@@ -1061,10 +1192,11 @@ about_screen() {
     echo " - iOS 7.1.0"
     echo " - iOS 7.1.1"
     echo " - iOS 7.1.2"
+    echo " - iOS 8.0"
     echo
     echo "Unsupported:"
     echo " - Below iOS 7.0.6"
-    echo " - iOS 8 or newer"
+    echo " - iOS 8.0.1 or newer"
     echo " - iPhone 5c or other devices"
     echo
     echo "Required files/folders:"
@@ -1081,6 +1213,8 @@ about_screen() {
     echo " - ipatcher"
     echo " - Kernel64Patcher"
     echo " - kerneldiff"
+    echo " - dsc64patcher (iOS 8 only)"
+    echo " - SSHRD_Script auto downloads (iOS 8 only)"
     echo " - 5sboot.sh"
     echo
     echo "Notes:"
@@ -1101,14 +1235,14 @@ main_menu() {
         header
 
         echo "WARNING:"
-        echo "This tool is for iPhone 5s iOS 7.x tethered downgrades only."
+        echo "This tool is for iPhone 5s iOS 7.x/8.0 tethered downgrades only."
         echo
         echo "Supported:"
         echo " - GSM  / n51ap / iPhone6,1"
         echo " - CDMA / n53ap / iPhone6,2"
-        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2"
+        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0"
         echo
-        echo "Unsupported: below 7.0.6, iOS 8+, iPhone 5c, other devices."
+        echo "Unsupported: below 7.0.6, iOS 8.0.1+, iPhone 5c, other devices."
         echo
         echo "Menu"
         echo "----"
@@ -1117,8 +1251,9 @@ main_menu() {
         echo "3) Restore Generated Modified IPSW"
         echo "4) Build Tethered Boot Files"
         echo "5) Tethered Boot Device"
-        echo "6) Full Build + Restore + Boot"
-        echo "7) About / Requirements"
+        echo "6) Patch iOS 8 dyld Shared Cache"
+        echo "7) Full Build + Restore + Boot"
+        echo "8) About / Requirements"
         echo "0) Exit"
         echo
 
@@ -1130,8 +1265,9 @@ main_menu() {
             3) restore_ios7 ;;
             4) build_boot_files ;;
             5) tethered_boot ;;
-            6) full_restore_and_boot ;;
-            7) about_screen ;;
+            6) patch_ios8_dyld ;;
+            7) full_restore_and_boot ;;
+            8) about_screen ;;
             0) exit 0 ;;
             *) error "Invalid choice"; sleep 1 ;;
         esac
