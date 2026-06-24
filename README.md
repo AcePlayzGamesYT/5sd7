@@ -12,7 +12,7 @@
 >
 > They are not bundled due to licensing uncertainty.
 
-**5sd7 (5s Downgrade 7)** is a utility for creating, restoring, and tether-booting iOS 7 on the iPhone 5s.
+**5sd7 (5s Downgrade 7)** is a utility for creating, restoring, and tether-booting iOS 7/8 on the iPhone 5s.
 
 The goal of this project is to automate the process of tether downgrading the iPhone 5s.
 
