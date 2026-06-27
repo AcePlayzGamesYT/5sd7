@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 #########################################
-# iphone 5s ios 7.x 8.0 tether dg
+# iphone 5s ios 7.x 8.0 9.3.4 tether dg
 # gsm/cdma ipsw builder + restore + boot
 #########################################
 
-VERSION="1.1"
+VERSION="2.1"
 
 #########################################
 # colors 
@@ -33,6 +33,21 @@ STATE_FILE="$SCRIPT_DIR/.5sd7_state"
 IOS7_IPSW="$BIN/ios7.ipsw"
 
 #########################################
+# per-version img4 / idevicerestore profiles
+#########################################
+
+TOOL_PROFILE_DIR="$SCRIPT_DIR/tool_profiles"
+TOOL_SWAP_BACKUP="$SCRIPT_DIR/.5sd7_tool_swap_backup"
+
+
+IOS9_IMG4_URL="https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/img4"
+IOS9_IDEVICERESTORE_URL="https://github.com/NyanSatan/SundanceInH2A/raw/refs/heads/master/executables/Darwin/idevicerestore"
+
+
+LEGACY_IMG4_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/img4"
+LEGACY_IDEVICERESTORE_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/idevicerestore"
+
+#########################################
 # target vars for runtime
 #########################################
 
@@ -49,6 +64,7 @@ IBEC_KEY=""
 DEVICETREE_KEY=""
 KCACHE_KEY=""
 RESTORERAMDISK_KEY=""
+ROOTFS_KEY=""
 IOS7_RESTORERAMDISK_FILENAME=""
 IOS12_RESTORERAMDISK_FILENAME=""
 
@@ -65,7 +81,7 @@ header() {
     clear
     echo -e "${BLUE}"
     echo "================================================"
-    echo " iPhone 5s iOS 7.x/8.0 Tethered Downgrade Tool"
+    echo " iPhone 5s iOS 7.x/8.0/9.3.4 Tethered Downgrade Tool"
     echo " Version $VERSION"
     echo "================================================"
     echo -e "${NC}"
@@ -100,7 +116,7 @@ run_cmd() {
 
     local status=$?
     if [[ "$status" -ne 0 ]]; then
-        error "Command failed with exit code $status"
+        error "Command failed (if this is img4 on cannot set convert do not worry, it is normal) with exit code $status"
         return "$status"
     fi
 
@@ -179,17 +195,283 @@ load_keys_for_target() {
     DEVICETREE_KEY="$(require_enc_value "$DEVICE_TYPE" "$TARGET_IOS" "DEVICETREE")"
     KCACHE_KEY="$(require_enc_value "$DEVICE_TYPE" "$TARGET_IOS" "KCACHE")"
     RESTORERAMDISK_KEY="$(require_enc_value "$DEVICE_TYPE" "$TARGET_IOS" "RESTORERAMDISK")"
+    ROOTFS_KEY=""
+
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        ROOTFS_KEY="$(require_enc_value "$DEVICE_TYPE" "$TARGET_IOS" "ROOTFS")"
+    fi
+
     IOS7_RESTORERAMDISK_FILENAME="$(require_enc_value "$DEVICE_TYPE" "$TARGET_IOS" "RESTORERAMDISK_FILENAME")"
     IOS12_RESTORERAMDISK_FILENAME="$(require_enc_value "$DEVICE_TYPE" "12.5.8" "RESTORERAMDISK_FILENAME")"
 }
 
 check_dsc64patcher_for_target() {
-    if [[ "$TARGET_IOS" == 8.* ]]; then
+    if [[ "$TARGET_IOS" == 8.* || "$TARGET_IOS" == 9.* ]]; then
         check_file "$BOOT/dsc64patcher"
     else
         if [[ ! -f "$BOOT/dsc64patcher" ]]; then
-            warn "dsc64patcher missing. This is OK for iOS 7, but iOS 8 support needs it."
+            warn "dsc64patcher missing. This is OK for iOS 7, but iOS 8/9 support needs it."
         fi
+    fi
+}
+
+copy_tool_both_bins() {
+    local name="$1"
+
+    mkdir -p "$BIN" "$BOOT"
+
+    if [[ -f "$BOOT/$name" && ! -f "$BIN/$name" ]]; then
+        cp "$BOOT/$name" "$BIN/$name"
+    elif [[ -f "$BIN/$name" && ! -f "$BOOT/$name" ]]; then
+        cp "$BIN/$name" "$BOOT/$name"
+    fi
+
+    chmod +x "$BIN/$name" "$BOOT/$name" 2>/dev/null
+}
+
+
+tool_backup_name() {
+    printf "%s" "$1" | sed 's#[/ ]#_#g'
+}
+
+backup_active_restore_tools_once() {
+    mkdir -p "$TOOL_SWAP_BACKUP"
+
+    local item
+    for item in "$BOOT/img4" "$BIN/img4" "$BOOT/idevicerestore" "$BIN/idevicerestore"; do
+        local backup_name
+        backup_name="$(tool_backup_name "$item")"
+
+        if [[ -f "$item" && ! -f "$TOOL_SWAP_BACKUP/$backup_name" ]]; then
+            cp "$item" "$TOOL_SWAP_BACKUP/$backup_name"
+        fi
+    done
+}
+
+restore_active_restore_tools_silent() {
+    if [[ ! -d "$TOOL_SWAP_BACKUP" ]]; then
+        return 0
+    fi
+
+    local item
+    for item in "$BOOT/img4" "$BIN/img4" "$BOOT/idevicerestore" "$BIN/idevicerestore"; do
+        local backup_name
+        backup_name="$(tool_backup_name "$item")"
+
+        if [[ -f "$TOOL_SWAP_BACKUP/$backup_name" ]]; then
+            mkdir -p "$(dirname "$item")"
+            cp "$TOOL_SWAP_BACKUP/$backup_name" "$item" 2>/dev/null || true
+            chmod +x "$item" 2>/dev/null || true
+        fi
+    done
+
+    rm -rf "$TOOL_SWAP_BACKUP" 2>/dev/null || true
+}
+
+download_profile_tool() {
+    local out="$1"
+    local url="$2"
+    local label="$3"
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to download $label"
+
+    rm -f "$out"
+    run_cmd curl -L -o "$out" "$url" || return
+    chmod +x "$out" 2>/dev/null
+
+    if [[ ! -s "$out" ]]; then
+        error "$label downloaded as an empty file."
+        return 1
+    fi
+}
+
+refresh_restore_tool_profile_for_target() {
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "5sd7 tool-profile switching currently supports Intel macOS only."
+    fi
+
+    if [[ "$(uname -m)" != "x86_64" ]]; then
+        die "This 5sd7 build is set up for Intel Mac only."
+    fi
+
+    local profile img4_url idevicerestore_url
+
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        profile="ios9_surrealra1n"
+        img4_url="$IOS9_IMG4_URL"
+        idevicerestore_url="$IOS9_IDEVICERESTORE_URL"
+        info "Refreshing iOS 9 tool profile: img4 with -J and idevicerestore with -y..."
+    else
+        profile="legacy_ios7_8"
+        img4_url="$LEGACY_IMG4_URL"
+        idevicerestore_url="$LEGACY_IDEVICERESTORE_URL"
+        info "Refreshing legacy iOS 7/8 tool profile: old img4 and idevicerestore without -y restore usage..."
+    fi
+
+    mkdir -p "$TOOL_PROFILE_DIR/$profile"
+
+    download_profile_tool "$TOOL_PROFILE_DIR/$profile/img4" "$img4_url" "$profile img4" || return
+    download_profile_tool "$TOOL_PROFILE_DIR/$profile/idevicerestore" "$idevicerestore_url" "$profile idevicerestore" || return
+}
+
+apply_restore_tool_profile_for_target() {
+    if [[ -z "$TARGET_IOS" ]]; then
+        return 0
+    fi
+
+    refresh_restore_tool_profile_for_target || return
+    backup_active_restore_tools_once
+
+    local profile
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        profile="ios9_surrealra1n"
+    else
+        profile="legacy_ios7_8"
+    fi
+
+    info "Applying temporary $profile img4/idevicerestore profile..."
+
+    cp "$TOOL_PROFILE_DIR/$profile/img4" "$BOOT/img4" || return
+    cp "$TOOL_PROFILE_DIR/$profile/img4" "$BIN/img4" || return
+    cp "$TOOL_PROFILE_DIR/$profile/idevicerestore" "$BIN/idevicerestore" || return
+    cp "$TOOL_PROFILE_DIR/$profile/idevicerestore" "$BOOT/idevicerestore" || return
+
+    chmod +x "$BOOT/img4" "$BIN/img4" "$BIN/idevicerestore" "$BOOT/idevicerestore" 2>/dev/null
+}
+
+trap restore_active_restore_tools_silent EXIT
+
+
+download_darwin_tool_both_bins() {
+    local name="$1"
+    local url="$2"
+
+    mkdir -p "$BIN" "$BOOT"
+
+    if [[ -f "$BOOT/$name" && -f "$BIN/$name" ]]; then
+        copy_tool_both_bins "$name"
+        return 0
+    fi
+
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "$name auto-download currently uses Darwin/macOS binaries only."
+    fi
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to download $name"
+
+    info "$name missing. Downloading Darwin binary..."
+    run_cmd curl -L -o "$BOOT/$name" "$url" || return
+    cp "$BOOT/$name" "$BIN/$name"
+    chmod +x "$BOOT/$name" "$BIN/$name" 2>/dev/null
+}
+
+download_ldid_both_bins() {
+    mkdir -p "$BIN" "$BOOT"
+
+    if [[ -f "$BOOT/ldid" && -f "$BIN/ldid" ]]; then
+        copy_tool_both_bins "ldid"
+        return 0
+    fi
+
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "ldid auto-download currently uses Darwin/macOS binaries only."
+    fi
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to download ldid"
+
+    local arch
+    arch="$(uname -m)"
+
+    local url
+    if [[ "$arch" == "arm64" ]]; then
+        url="https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_macosx_arm64"
+    else
+        url="https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_macosx_x86_64"
+    fi
+
+    info "ldid missing. Downloading Darwin binary..."
+    run_cmd curl -L -o "$BOOT/ldid" "$url" || return
+    cp "$BOOT/ldid" "$BIN/ldid"
+    chmod +x "$BOOT/ldid" "$BIN/ldid" 2>/dev/null
+}
+
+compile_asr64_patcher_both_bins() {
+    mkdir -p "$BIN" "$BOOT"
+
+    if [[ -f "$BOOT/asr64_patcher" && -f "$BIN/asr64_patcher" ]]; then
+        copy_tool_both_bins "asr64_patcher"
+        return 0
+    fi
+
+    command -v git >/dev/null 2>&1 || die "git is required to build asr64_patcher"
+    command -v make >/dev/null 2>&1 || die "make is required to build asr64_patcher"
+
+    if [[ "$(uname)" == "Darwin" ]] && ! xcode-select -p >/dev/null 2>&1; then
+        die "Xcode Command Line Tools are required to build asr64_patcher"
+    fi
+
+    local srcdir="$WORK/ios9_tools_src/asr64_patcher"
+
+    info "asr64_patcher missing. Cloning and compiling..."
+    rm -rf "$srcdir"
+    mkdir -p "$(dirname "$srcdir")"
+
+    run_cmd git clone https://github.com/iSuns9/asr64_patcher --recursive "$srcdir" || return
+    (
+        cd "$srcdir" || exit 1
+        make
+    ) || {
+        error "Failed to compile asr64_patcher."
+        return 1
+    }
+
+    if [[ ! -f "$srcdir/asr64_patcher" ]]; then
+        error "Compiled asr64_patcher binary not found."
+        return 1
+    fi
+
+    cp "$srcdir/asr64_patcher" "$BOOT/asr64_patcher"
+    cp "$srcdir/asr64_patcher" "$BIN/asr64_patcher"
+    chmod +x "$BOOT/asr64_patcher" "$BIN/asr64_patcher" 2>/dev/null
+}
+
+ensure_core_build_tools_if_missing() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        download_darwin_tool_both_bins "img4" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/img4" || return
+        download_darwin_tool_both_bins "kerneldiff" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/kerneldiff" || return
+    else
+        warn "Auto-download for img4/kerneldiff is currently Darwin/macOS only."
+    fi
+}
+
+ensure_ios9_tools_if_needed() {
+    if [[ "$TARGET_IOS" != 9.* ]]; then
+        return 0
+    fi
+
+    info "Checking iOS 9.3.4-only tools..."
+
+    ensure_core_build_tools_if_missing || return
+
+    download_darwin_tool_both_bins "kairos" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/kairos" || return
+    download_darwin_tool_both_bins "Kernel64Patcher2" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/Kernel64Patcher" || return
+    download_darwin_tool_both_bins "dmg" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/dmg" || return
+    download_darwin_tool_both_bins "hfsplus" "https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/hfsplus" || return
+    download_darwin_tool_both_bins "dsc64patcher" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/dsc64patcher" || return
+    download_ldid_both_bins || return
+    compile_asr64_patcher_both_bins || return
+
+    success "iOS 9.3.4-only tools are ready."
+}
+
+check_extra_tools_for_target() {
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        check_file "$BOOT/kairos"
+        check_file "$BOOT/Kernel64Patcher2"
+        check_file "$BOOT/asr64_patcher"
+        check_file "$BOOT/hfsplus"
+        check_file "$BOOT/ldid"
+        check_file "$BOOT/dmg"
     fi
 }
 
@@ -244,6 +526,7 @@ check_restore_tools() {
 
 check_build_tools() {
     check_base_layout
+    ensure_core_build_tools_if_missing
     check_file "$BOOT/img4"
     check_file "$BOOT/img4tool"
     check_file "$BOOT/ipatcher"
@@ -267,7 +550,13 @@ make_executable() {
     chmod +x "$BOOT/img4" 2>/dev/null
     chmod +x "$BOOT/ipatcher" 2>/dev/null
     chmod +x "$BOOT/Kernel64Patcher" 2>/dev/null
+    chmod +x "$BOOT/Kernel64Patcher2" 2>/dev/null
+    chmod +x "$BOOT/kairos" 2>/dev/null
     chmod +x "$BOOT/kerneldiff" 2>/dev/null
+    chmod +x "$BOOT/asr64_patcher" 2>/dev/null
+    chmod +x "$BOOT/hfsplus" 2>/dev/null
+    chmod +x "$BOOT/ldid" 2>/dev/null
+    chmod +x "$BOOT/dmg" 2>/dev/null
     chmod +x "$BOOT/dsc64patcher" 2>/dev/null
     chmod +x "$BOOT/5sboot.sh" 2>/dev/null
 }
@@ -313,6 +602,7 @@ select_target() {
     echo "3) iOS 7.1.1"
     echo "4) iOS 7.1.2"
     echo "5) iOS 8.0"
+    echo "6) iOS 9.3.4"
     echo
     read -rp "Choice: " ios_choice
 
@@ -337,6 +627,10 @@ select_target() {
             TARGET_IOS="8.0"
             TARGET_IOS_DISPLAY="8.0"
             ;;
+        6)
+            TARGET_IOS="9.3.4"
+            TARGET_IOS_DISPLAY="9.3.4"
+            ;;
         *)
             error "Invalid iOS selection."
             pause
@@ -345,7 +639,10 @@ select_target() {
     esac
 
     load_keys_for_target
+    ensure_ios9_tools_if_needed
     check_dsc64patcher_for_target
+    check_extra_tools_for_target
+    apply_restore_tool_profile_for_target || return
 
     success "Selected $DEVICE_TYPE / $BOARD / iOS $TARGET_IOS_DISPLAY"
     return 0
@@ -371,10 +668,10 @@ find_ios_component_paths() {
     DEVICETREE_IM4P="$(first_file "$src/Firmware/all_flash" -path "*all_flash.${BOARD}.production/DeviceTree.${BOARD}.im4p")"
     KCACHE_IM4P="$(first_file "$src" -name "kernelcache.release.${BOARD_SHORT}*")"
 
-    if [[ -z "$IBSS_IM4P" ]]; then die "Could not find iOS 7 iBSS for $BOARD"; fi
-    if [[ -z "$IBEC_IM4P" ]]; then die "Could not find iOS 7 iBEC for $BOARD"; fi
-    if [[ -z "$DEVICETREE_IM4P" ]]; then die "Could not find iOS 7 DeviceTree for $BOARD"; fi
-    if [[ -z "$KCACHE_IM4P" ]]; then die "Could not find iOS 7 kernelcache for $BOARD_SHORT"; fi
+    if [[ -z "$IBSS_IM4P" ]]; then die "Could not find target iOS iBSS for $BOARD"; fi
+    if [[ -z "$IBEC_IM4P" ]]; then die "Could not find target iOS iBEC for $BOARD"; fi
+    if [[ -z "$DEVICETREE_IM4P" ]]; then die "Could not find target iOS DeviceTree for $BOARD"; fi
+    if [[ -z "$KCACHE_IM4P" ]]; then die "Could not find target iOS kernelcache for $BOARD_SHORT"; fi
 
     IOS7_RESTORERAMDISK="$src/$IOS7_RESTORERAMDISK_FILENAME"
     check_file "$IOS7_RESTORERAMDISK"
@@ -483,11 +780,14 @@ return_to_normal() {
     info "Removing generated modified IPSW..."
     rm -f "$IOS7_IPSW"
 
+    info "Removing cached idevicerestore filesystem..."
+    sudo rm -rf "$SCRIPT_DIR/ios7" 2>/dev/null
+
     info "Removing ios7 folder from bin2boot..."
-    rm -rf "$BOOT/ios7"
+    sudo rm -rf "$BOOT/ios7" 2>/dev/null
 
     info "Removing ios7 folder from bin..."
-    rm -rf "$BIN/ios7"
+    sudo rm -rf "$BIN/ios7" 2>/dev/null
 
     if [[ -d "$BIN" ]]; then
         info "Resetting bin2boot from bin..."
@@ -615,12 +915,13 @@ build_modified_ipsw() {
     echo " - iOS 7.1.1"
     echo " - iOS 7.1.2"
     echo " - iOS 8.0"
+    echo " - iOS 9.3.4"
     echo
     echo "Supported boards:"
     echo " - GSM  = n51ap"
     echo " - CDMA = n53ap"
     echo
-    echo "Unsupported: below 7.0.6, iOS 8.0.1+, iPhone 5c, and other devices."
+    echo "Unsupported: below 7.0.6, iOS 8.0.1-9.3.3, iOS 9.3.5+, iPhone 5c, and other devices."
     echo
     read -rp "Continue? Type YES: " confirm
 
@@ -704,7 +1005,16 @@ build_modified_ipsw() {
     info "Replacing iOS 12 root filesystem with target iOS root filesystem..."
     echo "Target RootFS: $IOS7_ROOTFS"
     echo "iOS 12 RootFS: $IOS12_ROOTFS"
-    cp "$IOS7_ROOTFS" "$IOS12_ROOTFS"
+
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        info "Rebuilding iOS 9 root filesystem DMG like surrealra1n..."
+        rm -f "$BUILD_DIR/rootfs.raw"
+        run_cmd "$BOOT/dmg" extract "$IOS7_ROOTFS" "$BUILD_DIR/rootfs.raw" -k "$ROOTFS_KEY" || return
+        rm -f "$IOS12_ROOTFS"
+        run_cmd "$BOOT/dmg" build "$BUILD_DIR/rootfs.raw" "$IOS12_ROOTFS" || return
+    else
+        cp "$IOS7_ROOTFS" "$IOS12_ROOTFS"
+    fi
 
     cd "$BUILD_DIR" || die "Could not cd to build dir"
 
@@ -715,10 +1025,18 @@ build_modified_ipsw() {
     run_cmd "$BOOT/img4" -i "$IBEC_IM4P" -o iBEC.dec -k "$IBEC_KEY" || return
 
     info "Patching iBSS..."
-    run_cmd "$BOOT/ipatcher" iBSS.dec iBSS.patched || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd "$BOOT/kairos" iBSS.dec iBSS.patched || return
+    else
+        run_cmd "$BOOT/ipatcher" iBSS.dec iBSS.patched || return
+    fi
 
     info "Patching iBEC with restore boot args..."
-    run_cmd "$BOOT/ipatcher" iBEC.dec iBEC.patched -b "rd=md0 debug=0x2014e -v wdt=-1 nand-enable-reformat=1 -restore amfi=0xff cs_enforcement_disable=1" || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd "$BOOT/kairos" iBEC.dec iBEC.patched -b "rd=md0 debug=0x2014e -v wdt=-1 nand-enable-reformat=1 -restore amfi=0xff cs_enforcement_disable=1" || return
+    else
+        run_cmd "$BOOT/ipatcher" iBEC.dec iBEC.patched -b "rd=md0 debug=0x2014e -v wdt=-1 nand-enable-reformat=1 -restore amfi=0xff cs_enforcement_disable=1" || return
+    fi
 
     info "Packing patched iBSS into iOS 12 IPSW destination..."
     run_cmd "$BOOT/img4" -i iBSS.patched -o "$IOS12_IBSS_IM4P" -A -T ibss || return
@@ -782,6 +1100,8 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
     info "Patching kernelcache..."
     if [[ "$TARGET_IOS" == 8.* ]]; then
         run_cmd "$BOOT/Kernel64Patcher" kcache.raw kcache.patched -u 8 -t -p -e 8 -f 8 -a -m 8 -g -s -d || return
+    elif [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd "$BOOT/Kernel64Patcher2" kcache.raw kcache.patched -u 9 -f 9 -k -v || return
     else
         run_cmd "$BOOT/Kernel64Patcher" kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
     fi
@@ -790,10 +1110,43 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
     run_cmd "$BOOT/kerneldiff" kcache.raw kcache.patched kcache.bpatch || return
 
     info "Applying kernel patch to iOS 12 IPSW destination kernelcache without signing..."
-    run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        info "Packing iOS 9 restore kernelcache with img4 -J like surrealra1n..."
+        run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn -J || return
+    else
+        run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn || return
+    fi
 
     info "Decrypting target iOS restore ramdisk into iOS 12 restore ramdisk destination..."
-    run_cmd "$BOOT/img4" -i "$IOS7_RESTORERAMDISK" -o "$IOS12_RESTORERAMDISK" -k "$RESTORERAMDISK_KEY" -D || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        rm -f ramdisk.raw asr asr_patched ents.plist
+        run_cmd "$BOOT/img4" -i "$IOS7_RESTORERAMDISK" -o ramdisk.raw -k "$RESTORERAMDISK_KEY" || return
+        info "Patching restore ramdisk ASR for iOS 9..."
+        run_cmd "$BOOT/hfsplus" ramdisk.raw grow 40000000 || return
+        run_cmd "$BOOT/hfsplus" ramdisk.raw extract usr/sbin/asr asr || return
+        run_cmd "$BOOT/asr64_patcher" asr asr_patched || return
+
+        info "Extracting ASR entitlements..."
+        "$BOOT/ldid" -e asr > ents.plist || {
+            error "Failed to extract ASR entitlements."
+            return 1
+        }
+
+        if [[ ! -s ents.plist ]] || ! grep -q "<plist" ents.plist; then
+            warn "ldid did not output a valid plist. Signing ASR without entitlement plist..."
+            run_cmd "$BOOT/ldid" -S asr_patched || return
+        else
+            run_cmd "$BOOT/ldid" -Sents.plist asr_patched || return
+        fi
+
+        run_cmd "$BOOT/hfsplus" ramdisk.raw rm usr/sbin/asr || return
+        run_cmd "$BOOT/hfsplus" ramdisk.raw add asr_patched usr/sbin/asr || return
+        run_cmd "$BOOT/hfsplus" ramdisk.raw chmod 100755 usr/sbin/asr || return
+
+        run_cmd "$BOOT/img4" -i ramdisk.raw -o "$IOS12_RESTORERAMDISK" -A -T rdsk || return
+    else
+        run_cmd "$BOOT/img4" -i "$IOS7_RESTORERAMDISK" -o "$IOS12_RESTORERAMDISK" -k "$RESTORERAMDISK_KEY" -D || return
+    fi
 
     info "Zipping modified IPSW..."
     rm -f "$IOS7_IPSW"
@@ -823,6 +1176,8 @@ restore_ios7() {
     if ! load_state; then
         return
     fi
+
+    apply_restore_tool_profile_for_target || return
 
     echo -e "${YELLOW}WARNING:${NC}"
     echo "This will restore the generated modified IPSW:"
@@ -854,24 +1209,44 @@ restore_ios7() {
 
 if [[ -d "ios7" ]]; then
 
-        info "Removing idevicerestore cached filesystem..."
+    info "Removing idevicerestore cached filesystem..."
 
-        rm -rf ios7
-
-    fi
-
-    info "Starting idevicerestore erase restore..."
-    warn "You may be asked for your Mac password because this uses sudo."
-    run_cmd sudo ./idevicerestore -e ios7.ipsw || {
-        error "Restore failed."
+    run_cmd sudo rm -rf ios7 || {
+        error "Failed to remove cached filesystem."
         pause
         return
     }
 
+fi
+    info "Starting idevicerestore erase restore..."
+    warn "You may be asked for your Mac password because this uses sudo."
+
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        if [[ -d "lib" ]]; then
+            run_cmd sudo env LD_LIBRARY_PATH="lib" ./idevicerestore -ey ios7.ipsw || {
+                error "Restore failed."
+                pause
+                return
+            }
+        else
+            run_cmd sudo ./idevicerestore -ey ios7.ipsw || {
+                error "Restore failed."
+                pause
+                return
+            }
+        fi
+    else
+        run_cmd sudo ./idevicerestore -e ios7.ipsw || {
+            error "Restore failed."
+            pause
+            return
+        }
+    fi
+
     success "Restore command finished."
 
-    if [[ "$TARGET_IOS" == 8.* ]]; then
-        warn "iOS 8 restore needs dyld shared cache patched before normal setup/boot."
+    if [[ "$TARGET_IOS" == 8.* || "$TARGET_IOS" == 9.* ]]; then
+        warn "iOS $TARGET_IOS_DISPLAY restore needs dyld shared cache patched before normal setup/boot."
         warn "Use dsc64patcher with an SSH ramdisk before tethered boot."
     fi
 
@@ -922,7 +1297,11 @@ build_boot_files() {
         return
     fi
 
+    apply_restore_tool_profile_for_target || return
+
+    ensure_ios9_tools_if_needed
     check_dsc64patcher_for_target
+    check_extra_tools_for_target
 
     echo -e "${YELLOW}Boot file builder:${NC}"
     echo "This builds patched iBSS, iBEC, DeviceTree, and Kernelcache."
@@ -953,10 +1332,16 @@ build_boot_files() {
     run_cmd ./img4 -i "$IBEC_IM4P" -o iBEC.dec -k "$IBEC_KEY" || return
 
     info "Patching iBSS..."
-    run_cmd ./ipatcher iBSS.dec iBSS.patched || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd ./kairos iBSS.dec iBSS.patched || return
+    else
+        run_cmd ./ipatcher iBSS.dec iBSS.patched || return
+    fi
 
     info "Patching iBEC with tethered boot args..."
-    if [[ "$TARGET_IOS" == 8.* ]]; then
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd ./kairos iBEC.dec iBEC.patched -b "-v" || return
+    elif [[ "$TARGET_IOS" == 8.* ]]; then
         run_cmd ./ipatcher iBEC.dec iBEC.patched -b "-v rd=disk0s1s1 amfi=0xff cs_enforcement_disable=1 keepsyms=1 debug=0x2014e wdt=-1 PE_i_can_has_debugger=1 amfi_get_out_of_my_way=0x1 amfi_unrestrict_task_for_pid=0x0" || return
     else
         run_cmd ./ipatcher iBEC.dec iBEC.patched -b "-v rd=disk0s1s1" || return
@@ -983,6 +1368,8 @@ build_boot_files() {
     info "Patching kernelcache..."
     if [[ "$TARGET_IOS" == 8.* ]]; then
         run_cmd ./Kernel64Patcher kcache.raw kcache.patched -u 8 -t -p -e 8 -f 8 -a -m 8 -g -s -d || return
+    elif [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd ./Kernel64Patcher2 kcache.raw kcache.patched -u 9 -f 9 -k -v || return
     else
         run_cmd ./Kernel64Patcher kcache.raw kcache.patched -u 7 -m 7 -e 7 -f 7 -k || return
     fi
@@ -991,7 +1378,12 @@ build_boot_files() {
     run_cmd ./kerneldiff kcache.raw kcache.patched kcache.bpatch || return
 
     info "Building Kernelcache.img4..."
-    run_cmd ./img4 -i kcache.im4p -o Kernelcache.img4 -P kcache.bpatch -T rkrn -M im4m || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        info "Packing iOS 9 boot Kernelcache with img4 -J like surrealra1n..."
+        run_cmd ./img4 -i kcache.im4p -o Kernelcache.img4 -P kcache.bpatch -T rkrn -M im4m -J || return
+    else
+        run_cmd ./img4 -i kcache.im4p -o Kernelcache.img4 -P kcache.bpatch -T rkrn -M im4m || return
+    fi
 
     success "Boot files built successfully."
     echo
@@ -1056,10 +1448,10 @@ tethered_boot() {
 
 
 #########################################
-# opt 6: patch ios 8 dyld
+# opt 6: patch ios 8/9 dyld
 #########################################
 
-patch_ios8_dyld() {
+patch_ios8_9_dyld() {
     header
     make_executable
 
@@ -1067,15 +1459,15 @@ patch_ios8_dyld() {
         return
     fi
 
-    if [[ "$TARGET_IOS" != "8.0" ]]; then
-        error "dyld patching is only required for iOS 8.0."
+    if [[ "$TARGET_IOS" != "8.0" && "$TARGET_IOS" != "9.3.4" ]]; then
+        error "dyld patching is only required for iOS 8.0 and iOS 9.3.4."
         pause
         return
     fi
 
     check_file "$BOOT/dsc64patcher"
 
-    command -v git >/dev/null 2>&1 || die "git is required for iOS 8 support"
+    command -v git >/dev/null 2>&1 || die "git is required for iOS 8/9 support"
 
     if [[ ! -d "$BOOT/SSHRD_Script" ]]; then
         info "SSHRD_Script not found. Cloning..."
@@ -1119,7 +1511,11 @@ patch_ios8_dyld() {
     scp -P2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost:/mnt1/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64 dyld.raw || return
 
     info "Patching dyld shared cache..."
-    run_cmd "$BOOT/dsc64patcher" dyld.raw dyld.patched -8 || return
+    if [[ "$TARGET_IOS" == 9.* ]]; then
+        run_cmd "$BOOT/dsc64patcher" dyld.raw dyld.patched -9 || return
+    else
+        run_cmd "$BOOT/dsc64patcher" dyld.raw dyld.patched -8 || return
+    fi
 
     info "Uploading patched dyld shared cache..."
     scp -P2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dyld.patched root@localhost:/mnt1/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64 || return
@@ -1130,7 +1526,7 @@ patch_ios8_dyld() {
     info "Rebooting device..."
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost "/sbin/reboot"
 
-    success "iOS 8 dyld shared cache patched."
+    success "iOS $TARGET_IOS_DISPLAY dyld shared cache patched."
     pause
 }
 
@@ -1148,12 +1544,13 @@ full_restore_and_boot() {
     echo "This will:"
     echo " 1) Build modified IPSW from target iOS + iOS 12.5.8 IPSWs"
     echo " 2) Restore generated bin/ios7.ipsw"
-    echo " 3) Ask for SHSH2 blob"
-    echo " 4) Build tethered boot files"
-    echo " 5) Enter pwnDFU again"
-    echo " 6) Run 5sboot.sh"
+    echo " 3) Patch dyld shared cache for iOS 8/9 if needed"
+    echo " 4) Ask for SHSH2 blob"
+    echo " 5) Build tethered boot files"
+    echo " 6) Enter pwnDFU again"
+    echo " 7) Run 5sboot.sh"
     echo
-    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2 and 8.0.${NC}"
+    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2, 8.0, and 9.3.4.${NC}"
     echo
     read -rp "Start full flow? Type YES: " confirm
 
@@ -1166,8 +1563,8 @@ full_restore_and_boot() {
     build_modified_ipsw
     restore_ios7
 
-    if [[ "$TARGET_IOS" == "8.0" ]]; then
-        patch_ios8_dyld
+    if [[ "$TARGET_IOS" == "8.0" || "$TARGET_IOS" == "9.3.4" ]]; then
+    patch_ios8_9_dyld
     fi
 
     build_boot_files
@@ -1193,10 +1590,12 @@ about_screen() {
     echo " - iOS 7.1.1"
     echo " - iOS 7.1.2"
     echo " - iOS 8.0"
+    echo " - iOS 9.3.4"
     echo
     echo "Unsupported:"
     echo " - Below iOS 7.0.6"
-    echo " - iOS 8.0.1 or newer"
+    echo " - iOS 8.0.1-9.3.3"
+    echo " - iOS 9.3.5 or newer"
     echo " - iPhone 5c or other devices"
     echo
     echo "Required files/folders:"
@@ -1208,13 +1607,21 @@ about_screen() {
     echo "Required tools:"
     echo " - gaster"
     echo " - idevicerestore"
+    echo " - iOS 9 temporarily refreshes img4/idevicerestore to the surrealra1n profile (-J/-y)"
+    echo " - iOS 7/8 temporarily refreshes img4/idevicerestore to the legacy profile (-e/no -J)"
     echo " - img4"
     echo " - img4tool"
     echo " - ipatcher"
     echo " - Kernel64Patcher"
-    echo " - kerneldiff"
-    echo " - dsc64patcher (iOS 8 only)"
-    echo " - SSHRD_Script auto downloads (iOS 8 only)"
+    echo " - Kernel64Patcher2 (iOS 9 only, auto downloads)"
+    echo " - kairos (iOS 9 only, auto downloads)"
+    echo " - asr64_patcher (iOS 9 only, auto builds)"
+    echo " - hfsplus (iOS 9 only, auto downloads)"
+    echo " - ldid (iOS 9 only, auto downloads)"
+    echo " - dmg (iOS 9 only, auto downloads)"
+    echo " - kerneldiff (auto downloads if missing)"
+    echo " - dsc64patcher (iOS 8/9 only)"
+    echo " - SSHRD_Script auto downloads (iOS 8/9 only)"
     echo " - 5sboot.sh"
     echo
     echo "Notes:"
@@ -1235,14 +1642,14 @@ main_menu() {
         header
 
         echo "WARNING:"
-        echo "This tool is for iPhone 5s iOS 7.x/8.0 tethered downgrades only."
+        echo "This tool is for iPhone 5s iOS 7.x/8.0/9.3.4 tethered downgrades only."
         echo
         echo "Supported:"
         echo " - GSM  / n51ap / iPhone6,1"
         echo " - CDMA / n53ap / iPhone6,2"
-        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0"
+        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0, 9.3.4"
         echo
-        echo "Unsupported: below 7.0.6, iOS 8.0.1+, iPhone 5c, other devices."
+        echo "Unsupported: below 7.0.6, iOS 8.0.1-9.3.3, iOS 9.3.5+, iPhone 5c, other devices."
         echo
         echo "Menu"
         echo "----"
@@ -1251,7 +1658,7 @@ main_menu() {
         echo "3) Restore Generated Modified IPSW"
         echo "4) Build Tethered Boot Files"
         echo "5) Tethered Boot Device"
-        echo "6) Patch iOS 8 dyld Shared Cache"
+        echo "6) Patch iOS 8/9 dyld Shared Cache"
         echo "7) Full Build + Restore + Boot"
         echo "8) About / Requirements"
         echo "0) Exit"
@@ -1260,15 +1667,15 @@ main_menu() {
         read -rp "Choice: " choice
 
         case "$choice" in
-            1) return_to_normal ;;
-            2) build_modified_ipsw ;;
-            3) restore_ios7 ;;
-            4) build_boot_files ;;
-            5) tethered_boot ;;
-            6) patch_ios8_dyld ;;
-            7) full_restore_and_boot ;;
-            8) about_screen ;;
-            0) exit 0 ;;
+            1) return_to_normal; restore_active_restore_tools_silent ;;
+            2) build_modified_ipsw; restore_active_restore_tools_silent ;;
+            3) restore_ios7; restore_active_restore_tools_silent ;;
+            4) build_boot_files; restore_active_restore_tools_silent ;;
+            5) tethered_boot; restore_active_restore_tools_silent ;;
+            6) patch_ios8_9_dyld; restore_active_restore_tools_silent ;;
+            7) full_restore_and_boot; restore_active_restore_tools_silent ;;
+            8) about_screen; restore_active_restore_tools_silent ;;
+            0) restore_active_restore_tools_silent; exit 0 ;;
             *) error "Invalid choice"; sleep 1 ;;
         esac
     done
