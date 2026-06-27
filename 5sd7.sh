@@ -5,7 +5,7 @@
 # gsm/cdma ipsw builder + restore + boot
 #########################################
 
-VERSION="2.1"
+VERSION="2.2"
 
 #########################################
 # colors 
@@ -39,11 +39,11 @@ IOS7_IPSW="$BIN/ios7.ipsw"
 TOOL_PROFILE_DIR="$SCRIPT_DIR/tool_profiles"
 TOOL_SWAP_BACKUP="$SCRIPT_DIR/.5sd7_tool_swap_backup"
 
-
+# iOS 9 profile: match surrealra1n/seprmvr64 restore behavior.
 IOS9_IMG4_URL="https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/img4"
 IOS9_IDEVICERESTORE_URL="https://github.com/NyanSatan/SundanceInH2A/raw/refs/heads/master/executables/Darwin/idevicerestore"
 
-
+# iOS 7/8 legacy profile: separate old-tool profile, restored with -e only and no -J usage.
 LEGACY_IMG4_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/img4"
 LEGACY_IDEVICERESTORE_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/idevicerestore"
 
@@ -81,7 +81,7 @@ header() {
     clear
     echo -e "${BLUE}"
     echo "================================================"
-    echo " iPhone 5s iOS 7.x/8.0/9.3.4 Tethered Downgrade Tool"
+    echo " iPhone 5s iOS 7.x/8.x/9.3.x Tethered Downgrade Tool"
     echo " Version $VERSION"
     echo "================================================"
     echo -e "${NC}"
@@ -602,7 +602,9 @@ select_target() {
     echo "3) iOS 7.1.1"
     echo "4) iOS 7.1.2"
     echo "5) iOS 8.0"
-    echo "6) iOS 9.3.4"
+    echo "6) iOS 8.4"
+    echo "7) iOS 9.3.2"
+    echo "8) iOS 9.3.4"
     echo
     read -rp "Choice: " ios_choice
 
@@ -628,6 +630,14 @@ select_target() {
             TARGET_IOS_DISPLAY="8.0"
             ;;
         6)
+            TARGET_IOS="8.4"
+            TARGET_IOS_DISPLAY="8.4"
+            ;;
+        7)
+            TARGET_IOS="9.3.2"
+            TARGET_IOS_DISPLAY="9.3.2"
+            ;;
+        8)
             TARGET_IOS="9.3.4"
             TARGET_IOS_DISPLAY="9.3.4"
             ;;
@@ -1459,7 +1469,7 @@ patch_ios8_9_dyld() {
         return
     fi
 
-    if [[ "$TARGET_IOS" != "8.0" && "$TARGET_IOS" != "9.3.4" ]]; then
+    if [[ "$TARGET_IOS" != 8.* && "$TARGET_IOS" != 9.* ]]; then
         error "dyld patching is only required for iOS 8.0 and iOS 9.3.4."
         pause
         return
@@ -1550,7 +1560,7 @@ full_restore_and_boot() {
     echo " 6) Enter pwnDFU again"
     echo " 7) Run 5sboot.sh"
     echo
-    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2, 8.0, and 9.3.4.${NC}"
+    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2, 8.0, 8.4, 9.3.2, and 9.3.4.${NC}"
     echo
     read -rp "Start full flow? Type YES: " confirm
 
@@ -1563,7 +1573,7 @@ full_restore_and_boot() {
     build_modified_ipsw
     restore_ios7
 
-    if [[ "$TARGET_IOS" == "8.0" || "$TARGET_IOS" == "9.3.4" ]]; then
+    if [[ "$TARGET_IOS" == 8.* || "$TARGET_IOS" == 9.* ]]; then
     patch_ios8_9_dyld
     fi
 
@@ -1642,12 +1652,12 @@ main_menu() {
         header
 
         echo "WARNING:"
-        echo "This tool is for iPhone 5s iOS 7.x/8.0/9.3.4 tethered downgrades only."
+        echo "This tool is for iPhone 5s iOS 7.x/8.x/9.3.x tethered downgrades only."
         echo
         echo "Supported:"
         echo " - GSM  / n51ap / iPhone6,1"
         echo " - CDMA / n53ap / iPhone6,2"
-        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0, 9.3.4"
+        echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0, 8.4, 9.3.2, 9.3.4"
         echo
         echo "Unsupported: below 7.0.6, iOS 8.0.1-9.3.3, iOS 9.3.5+, iPhone 5c, other devices."
         echo
