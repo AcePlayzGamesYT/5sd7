@@ -1,189 +1,175 @@
-# 5sd7 Tethered Downgrade Tool for iPhone 5s iOS 7.0.6 through 8.0
+# 5sd7 Tethered Downgrade Tool for iPhone 5s (iOS 7.0.6 – 9.3.4)
 
 > [!IMPORTANT]
-> **img4lib (`img4`) and kerneldiff are NOT included with this project.**
+> Some third-party tools are **downloaded automatically** by 5sd7 when required.
 >
-> These tools **must be compiled manually** and placed in both:
+> These tools are **not distributed with this project** and remain the property of their respective authors.
 >
-> * `bin/`
-> * `bin2boot/`
+> Depending on the selected downgrade target, 5sd7 may automatically download tools such as:
 >
-> 5sd7 **will not function correctly without them.**
+> * img4 (img4lib)
+> * kerneldiff
+> * kairos
+> * Kernel64Patcher2
+> * dsc64patcher
+> * SSHRD
+> * hfsplus
+> * dmg
+> * ldid
+> * asr64_patcher
+> * ipx_restored_patcher (when required)
+> * idevicerestore (version depends on selected iOS)
 >
-> They are not bundled due to licensing uncertainty.
+> These tools are downloaded directly from their respective upstream projects. They are **not bundled** with 5sd7.
 
-**5sd7 (5s Downgrade 7)** is a utility for creating, restoring, and tether-booting iOS 7/8 on the iPhone 5s.
+**5sd7 (5s Downgrade 7)** is a utility for creating, restoring, and tether-booting iOS 7, iOS 8, and iOS 9 on the iPhone 5s.
 
-The goal of this project is to automate the process of tether downgrading the iPhone 5s.
+The goal of this project is to automate the tethered downgrade process while preserving the workflows used by the iOS research community.
 
-Third-party software licenses can be found in the `THIRD_PARTY_LICENSES` directory.
-
+Third-party licenses included with the project can be found in the `THIRD_PARTY_LICENSES` directory.
 
 ---
 
-## Features
+# Features
 
-This tool only supports iOS 7.0.6 through 8.0.
-Versions below iOS 7.0.6 and above iOS 8.0 are not supported.
-* Supports iPhone 5s GSM (iPhone6,1 / n51ap)
-* Supports iPhone 5s CDMA (iPhone6,2 / n53ap)
-* Supports:
+Supported firmware:
 
-  * iOS 7.0.6
-  * iOS 7.1
-  * iOS 7.1.1
-  * iOS 7.1.2
-  * iOS 8.0
+* iOS 7.0.6
+* iOS 7.1
+* iOS 7.1.1
+* iOS 7.1.2
+* iOS 8.0
+* iOS 9.3.4
+
+Features include:
+
 * Automatic IPSW extraction
-* Automatic root filesystem replacement
+* Automatic root filesystem rebuilding
 * Automatic iBSS patching
 * Automatic iBEC patching
 * Automatic DeviceTree patching
 * Automatic kernelcache patching
-* Automatic restore ramdisk replacement
+* Automatic ASR patching (iOS 9)
+* Automatic restore ramdisk rebuilding
 * Automatic IPSW rebuilding
 * Automated restore workflow
 * Automated tethered boot workflow
+* Automatic dyld shared cache patching (iOS 8)
+* Automatic download of required third-party utilities
+* Separate restore tool profiles for legacy (iOS 7/8) and iOS 9 restores
 
 ---
 
-## Compatibility
+# Compatibility
 
-### Confirmed Working
+## Confirmed Working
 
 * GSM (iPhone6,1 / n51ap) → iOS 7.1.2
-* * GSM (iPhone6,1 / n51ap) → iOS 8.0
+* GSM (iPhone6,1 / n51ap) → iOS 8.0
+* GSM (iPhone6,1 / n51ap) → iOS 9.3.4
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1.2
-### Very Likely Working
 
-The following configurations use the exact same workflow and patching process but have not yet been personally tested:
+## Very Likely Working
 
-* GSM (iPhone6,1 / n51ap) → iOS 7.0.6
-* GSM (iPhone6,1 / n51ap) → iOS 7.1
-* GSM (iPhone6,1 / n51ap) → iOS 7.1.1
-* CDMA (iPhone6,2 / n53ap) → iOS 7.0.6
-* CDMA (iPhone6,2 / n53ap) → iOS 7.1
-* CDMA (iPhone6,2 / n53ap) → iOS 7.1.1
-*  * CDMA (iPhone6,2 / n53ap) → iOS 8.0
+Because the patching workflow is identical:
 
----
+### GSM
 
-## Supported Platforms
+* iOS 7.0.6
+* iOS 7.1
+* iOS 7.1.1
 
-### Confirmed Working
+### CDMA
 
-* Intel Macs (x86_64)
-* macOS Monterey
-
-### Untested
-
-* Apple Silicon (M1, M2, M3, M4)
-* macOS versions other than Monterey
-
-Apple Silicon compatibility is currently unknown.
+* iOS 7.0.6
+* iOS 7.1
+* iOS 7.1.1
+* iOS 8.0
+* iOS 9.3.4
 
 ---
 
-## Requirements
+# Requirements
 
 You must provide:
 
-* Target iOS 7/8 IPSW
-* iOS 12.5.8 IPSW 
-* SHSH2 blob for iOS 12.5.8 (The SHSH2 blob used must correspond to the device being restored and must be for iOS 12.5.8.)
+* Target iOS IPSW
+* iOS 12.5.8 IPSW
+* Matching iOS 12.5.8 SHSH2 blob
 
-No Apple firmware files are included in this repository.
+No Apple firmware is included with this repository.
 
 ---
 
-## Dependencies
+# Dependencies
 
-The following tools are included, all dependencies for these tools must be installed if any are needed:
+## Included
 
 * gaster
-* idevicerestore (must have the necessary dependencies in /usr/local/lib for it to work)
 * ipatcher
 * Kernel64Patcher
 * img4tool
-* lzfse
 * libirecovery
 * libusbmuxd
+* lzfse
 
-### Additional Required Tools
+## Downloaded Automatically
 
-The following tools are NOT included:
+Depending on the selected firmware version:
 
 * img4 (img4lib)
 * kerneldiff
+* kairos
+* Kernel64Patcher2
+* idevicerestore
+* hfsplus
+* dmg
+* ldid
 * dsc64patcher
-
-These tools must be obtained and compiled separately, then the binaries placed in bin and bin2boot.
-
-They are not bundled with this project due to licensing uncertainty.
-
----
-
-## What This Project Does Not Include
-
-This repository does not contain:
-
-* Apple IPSWs
-* Apple firmware files
-* Extracted IPSW contents
-* Decrypted firmware components
-* Patched firmware components
-* Prebuilt downgrade IPSWs
-
-Users must supply their own IPSWs.
+* SSHRD
+* asr64_patcher
+* ipx_restored_patcher (when required)
 
 ---
 
-## Disclaimer
+# Credits
 
-This software is provided as-is with no warranty of any kind.
+This project would not be possible without the work of the iOS research and jailbreak community.
 
-Use this software entirely at your own risk.
-
- I am not responsible for:
-
-* Bricked devices
-* Boot loops
-* Failed restores
-* Data loss
-* Activation issues
-* Hardware damage
-* Software damage
-* Unsupported configurations
-* Any other consequences resulting from the use of this software
-
-By using this project, you accept full responsibility for any modifications made to your device.
-
----
-
-## Credits
-
-This project relies on the work of many developers in the iOS research and jailbreak community.
-
-Credit goes to the developers of:
+Special thanks to the developers and maintainers of:
 
 * gaster
 * idevicerestore
 * ipatcher
+* kairos
 * Kernel64Patcher
+* Kernel64Patcher2
 * img4tool
-* img4lib
+* img4 (img4lib)
 * kerneldiff
+* hfsplus
+* dmg
+* ldid
+* dsc64patcher
+* SSHRD
+* asr64_patcher
+* ipx_restored_patcher
 * libirecovery
 * libusbmuxd
 * lzfse
-* user pwnerblu
 
-as well as the developers whose research made tethered downgrades possible.
+Additional thanks to:
 
-## License
+* **LukeZGD** (Legacy-iOS-Kit and Semaphorin)
+* **Mineek** (restored patching research)
+* **pwnerblu** (iPhone 5s iOS 9 downgrade research and documentation)
 
-The 5sd7 project itself is licensed under the MIT License.
+Finally, thanks to the many developers and researchers whose work on checkm8, Image4, SecureROM, and legacy iOS restoration made projects like this possible.
 
-Third-party software included with this project is licensed under its respective license. See the THIRD_PARTY_LICENSES directory for additional information.
+---
 
+# License
 
+5sd7 itself is licensed under the MIT License.
+
+Third-party software remains under the licenses provided by its respective authors. Automatic downloading of third-party tools does **not** transfer ownership or change the original licensing of those projects.
