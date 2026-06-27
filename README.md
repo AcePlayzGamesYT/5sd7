@@ -39,6 +39,8 @@ Supported firmware:
 * iOS 7.1.1
 * iOS 7.1.2
 * iOS 8.0
+* iOS 8.4
+* iOS 9.3.2
 * iOS 9.3.4
 
 Features include:
@@ -78,6 +80,8 @@ Because the patching workflow is identical:
 * iOS 7.0.6
 * iOS 7.1
 * iOS 7.1.1
+* iOS 9.3.2
+* iOS 8.4
 
 ### CDMA
 
@@ -85,6 +89,8 @@ Because the patching workflow is identical:
 * iOS 7.1
 * iOS 7.1.1
 * iOS 8.0
+* iOS 8.4
+* iOS 9.3.2
 * iOS 9.3.4
 
 ---
