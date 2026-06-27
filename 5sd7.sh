@@ -33,17 +33,17 @@ STATE_FILE="$SCRIPT_DIR/.5sd7_state"
 IOS7_IPSW="$BIN/ios7.ipsw"
 
 #########################################
-# per-version img4 / idevicerestore profiles
+# per version img4 / idevicerestore profiles
 #########################################
 
 TOOL_PROFILE_DIR="$SCRIPT_DIR/tool_profiles"
 TOOL_SWAP_BACKUP="$SCRIPT_DIR/.5sd7_tool_swap_backup"
 
-# iOS 9 profile: match surrealra1n/seprmvr64 restore behavior.
+
 IOS9_IMG4_URL="https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/img4"
 IOS9_IDEVICERESTORE_URL="https://github.com/NyanSatan/SundanceInH2A/raw/refs/heads/master/executables/Darwin/idevicerestore"
 
-# iOS 7/8 legacy profile: separate old-tool profile, restored with -e only and no -J usage.
+
 LEGACY_IMG4_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/img4"
 LEGACY_IDEVICERESTORE_URL="https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/idevicerestore"
 
