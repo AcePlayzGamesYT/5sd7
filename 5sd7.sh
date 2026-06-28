@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 #########################################
-# iphone 5s ios 7.x 8.0 9.3.4 tether dg
-# gsm/cdma ipsw builder + restore + boot
+# iphone 5s legacy ios resotre downgrade tool
+# gsm/cdma ipsw builder restore boot
 #########################################
 
-VERSION="2.2"
+VERSION="2.3"
 
 #########################################
 # colors 
@@ -81,7 +81,7 @@ header() {
     clear
     echo -e "${BLUE}"
     echo "================================================"
-    echo " iPhone 5s iOS 7.x/8.x/9.3.x Tethered Downgrade Tool"
+    echo " iPhone 5s Legacy Restore / Downgrade Tool"
     echo " Version $VERSION"
     echo "================================================"
     echo -e "${NC}"
@@ -691,14 +691,14 @@ find_ios12_destination_paths() {
     local dst="$1"
 
     # 12.5.8 uses a different setup for ibss and ibec than 7.
-    # 7:  Firmware/dfu/iBSS.n51ap.RELEASE.im4p or iBSS.n53ap.RELEASE.im4p
-    # 12: Firmware/dfu/iBSS.iphone6.RELEASE.im4p and iBEC.iphone6.RELEASE.im4p
+    # 7:  firmware/dfu/ibss.n51ap.release.im4p or ibss.n53ap.release.im4p
+    # 12: firmware/dfu/ibss.iphone6.release.im4p and ibec.iphone6.release.im4p
     IOS12_IBSS_IM4P="$(first_file "$dst/Firmware/dfu" -name "iBSS.iphone6.RELEASE.im4p")"
     IOS12_IBEC_IM4P="$(first_file "$dst/Firmware/dfu" -name "iBEC.iphone6.RELEASE.im4p")"
 
-    #  12 dtre is directly in Firmware/all_flash, not inside all_flash.n51ap.production.
-    # GSM  = DeviceTree.n51ap.im4p
-    # CDMA = DeviceTree.n53ap.im4p
+    #  12 dtre is directly in firmware/all_flash, not inside all_flash.n51ap.production.
+    # gsm  = devicetree.n51ap.im4p
+    # cdma = devicetree.n53ap.im4p
     IOS12_DEVICETREE_IM4P="$(first_file "$dst/Firmware/all_flash" -name "DeviceTree.${BOARD}.im4p")"
 
     #  12.5.8 uses a shared 5s kernjelcache name in the ipsw root.
@@ -1544,12 +1544,12 @@ patch_ios8_9_dyld() {
 # opt 6: automatic full
 #########################################
 
-full_restore_and_boot() {
+full_old() {
     header
     check_base_layout
     make_executable
 
-    echo -e "${RED}FULL FLOW${NC}"
+    echo -e "${RED}FULL FLOW - LEGACY TETHERED${NC}"
     echo
     echo "This will:"
     echo " 1) Build modified IPSW from target iOS + iOS 12.5.8 IPSWs"
@@ -1560,9 +1560,9 @@ full_restore_and_boot() {
     echo " 6) Enter pwnDFU again"
     echo " 7) Run 5sboot.sh"
     echo
-    echo -e "${YELLOW}Supported only for iPhone 5s iOS 7.0.6 through 7.1.2, 8.0, 8.4, 9.3.2, and 9.3.4.${NC}"
+    echo -e "${YELLOW}Supported here: iOS 7.0.6 through 7.1.2, 8.0, 8.4, 9.3.2, and 9.3.4.${NC}"
     echo
-    read -rp "Start full flow? Type YES: " confirm
+    read -rp "Start legacy full flow? Type YES: " confirm
 
     if [[ "$confirm" != "YES" ]]; then
         warn "Cancelled."
@@ -1574,12 +1574,85 @@ full_restore_and_boot() {
     restore_ios7
 
     if [[ "$TARGET_IOS" == 8.* || "$TARGET_IOS" == 9.* ]]; then
-    patch_ios8_9_dyld
+        patch_ios8_9_dyld
     fi
 
     build_boot_files
     tethered_boot
 }
+
+full_1021() {
+    header
+    check_base_layout
+    make_executable
+
+    echo -e "${RED}FULL FLOW - iOS 10.2.1 TETHERED${NC}"
+    echo
+    echo "This will:"
+    echo " 1) Run the iOS 10.2.1 tethered restore"
+    echo " 2) Then run the iOS 10 tether boot option"
+    echo
+    warn "After restore, put the phone back into DFU when the boot step asks."
+    echo
+    read -rp "Start iOS 10.2.1 full flow? Type YES: " confirm
+
+    if [[ "$confirm" != "YES" ]]; then
+        warn "Cancelled."
+        pause
+        return
+    fi
+
+    ios10_1021_restore || return
+    ios10_boot
+}
+
+full_1033() {
+    header
+    check_base_layout
+    make_executable
+
+    echo -e "${RED}FULL FLOW - iOS 10.3.3 OTA UNTETHERED${NC}"
+    echo
+    echo "This will run the iOS 10.3.3 OTA untethered restore."
+    echo
+    warn "Signing is OTA-only, but the final restore still uses the normal 10.3.3 Restore IPSW payload."
+    echo
+    read -rp "Start iOS 10.3.3 OTA flow? Type YES: " confirm
+
+    if [[ "$confirm" != "YES" ]]; then
+        warn "Cancelled."
+        pause
+        return
+    fi
+
+    ios10_1033_restore
+}
+
+full_restore_and_boot() {
+    header
+
+    echo -e "${RED}FULL FLOW${NC}"
+    echo
+    echo "Pick a full flow:"
+    echo
+    echo "1) Legacy iOS 7/8/9 tethered flow"
+    echo "2) iOS 10.2.1 tethered flow"
+    echo "3) iOS 10.3.3 OTA untethered flow"
+    echo
+    read -rp "Choice: " flow_choice
+
+    case "$flow_choice" in
+        1) full_old ;;
+        2) full_1021 ;;
+        3) full_1033 ;;
+        *)
+            error "Invalid full flow choice."
+            pause
+            return 1
+            ;;
+    esac
+}
+
 
 #########################################
 # info gui
@@ -1601,11 +1674,12 @@ about_screen() {
     echo " - iOS 7.1.2"
     echo " - iOS 8.0"
     echo " - iOS 9.3.4"
+    echo " - iOS 10.2.1 tethered"
+    echo " - iOS 10.3.3 OTA untethered"
     echo
     echo "Unsupported:"
     echo " - Below iOS 7.0.6"
-    echo " - iOS 8.0.1-9.3.3"
-    echo " - iOS 9.3.5 or newer"
+    echo " - random in-between builds this script does not handle"
     echo " - iPhone 5c or other devices"
     echo
     echo "Required files/folders:"
@@ -1638,10 +1712,1024 @@ about_screen() {
     echo " - GSM uses n51ap files."
     echo " - CDMA uses n53ap files."
     echo " - This script does not include Apple firmware files."
-    echo " - The user supplies IPSWs and SHSH blobs."
+    echo " - The user supplies IPSWs, OTA packages, and SHSH blobs."
+    echo " - iOS 10.3.3 uses OTA signing, but still needs the normal restore IPSW as payload."
 
     pause
 }
+
+#########################################
+# ios 10 restore paths
+#########################################
+
+IOS10_IDENTIFIER=""
+IOS10_BUILD=""
+IOS10_LATEST_VERSION=""
+IOS10_LATEST_BUILD=""
+IOS10_TARGET_IPSW=""
+IOS10_LATEST_IPSW=""
+IOS10_SHSH_PATH=""
+IOS10_ECID=""
+IOS10_SEP_PATH=""
+IOS10_SEP_MANIFEST=""
+
+IOS10_103_IPSW_URL="http://appldnld.apple.com/ios10.3/091-02949-20170327-7584B286-0D86-11E7-A4FA-7ECE122AC769/iPhone_4.0_64bit_10.3_14E277_Restore.ipsw"
+IOS10_1033_IPSW_URL="http://appldnld.apple.com/ios10.3.3/091-23133-20170719-CA8E78E6-6977-11E7-968B-2B9100BA0AE3/iPhone_4.0_64bit_10.3.3_14G60_Restore.ipsw"
+
+ios10_stat_size() {
+    if stat -c %s "$1" >/dev/null 2>&1; then
+        stat -c %s "$1"
+    else
+        stat -f %z "$1"
+    fi
+}
+
+ios10_find_dmg() {
+    local dir="$1"
+    local mode="$2"
+    local max_size="${3:-}"
+
+    find "$dir" -type f -name "*.dmg" ! -name "._*" -print |
+    while IFS= read -r f; do
+        local size
+        size="$(ios10_stat_size "$f")" || continue
+        if [[ -n "$max_size" && "$size" -ge "$max_size" ]]; then
+            continue
+        fi
+        printf "%s %s\n" "$size" "$f"
+    done |
+    if [[ "$mode" == "smallest" ]]; then
+        sort -n
+    else
+        sort -nr
+    fi |
+    head -n 1 |
+    cut -d' ' -f2-
+}
+
+ios10_parse_plist_value() {
+    local ipsw="$1"
+    local key="$2"
+    unzip -p "$ipsw" BuildManifest.plist 2>/dev/null |
+        awk -v k="$key" '
+            $0 ~ "<key>" k "</key>" {
+                getline
+                gsub(/.*<string>/, "")
+                gsub(/<\/string>.*/, "")
+                print
+                exit
+            }
+        '
+}
+
+ios10_set_build_from_ipsw_or_default() {
+    local ipsw="$1"
+    local default_build="$2"
+    local parsed_build=""
+
+    # do not verify/reject ipsws here. only read the build tag for futurerestore's
+    # /tmp/futurerestore/ibss.<board>.<build>.patched.img4 naming.
+    parsed_build="$(ios10_parse_plist_value "$ipsw" ProductBuildVersion || true)"
+
+    if [[ -z "$parsed_build" ]]; then
+        warn "Could not read ProductBuildVersion from IPSW. Using default build $default_build."
+        IOS10_BUILD="$default_build"
+    else
+        IOS10_BUILD="$parsed_build"
+    fi
+
+    info "Using build tag for futurerestore prepatched iBSS/iBEC: $IOS10_BUILD"
+}
+
+
+ios10_select_5s_model() {
+    header
+    echo "Select iPhone 5s model for iOS 10:"
+    echo
+    echo "1) GSM  / iPhone6,1 / n51ap"
+    echo "2) CDMA / iPhone6,2 / n53ap"
+    echo
+    read -rp "Choice: " model_choice
+
+    case "$model_choice" in
+        1)
+            DEVICE_TYPE="GSM"
+            BOARD="n51ap"
+            BOARD_SHORT="n51"
+            IOS10_IDENTIFIER="iPhone6,1"
+            ;;
+        2)
+            DEVICE_TYPE="CDMA"
+            BOARD="n53ap"
+            BOARD_SHORT="n53"
+            IOS10_IDENTIFIER="iPhone6,2"
+            ;;
+        *)
+            error "Invalid model selection."
+            pause
+            return 1
+            ;;
+    esac
+}
+
+ios10_enc_key() {
+    local ios="$1"
+    local component="$2"
+    require_enc_value "$DEVICE_TYPE" "$ios" "$component"
+}
+
+ensure_ios10_tools() {
+    check_base_layout
+    make_executable
+
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "The iOS 10 helpers in this 5sd7 build are set up for macOS only."
+    fi
+
+    ensure_core_build_tools_if_missing || return
+
+    download_darwin_tool_both_bins "img4tool" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/img4tool" || return
+    download_darwin_tool_both_bins "pzb" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/pzb" || return
+    download_darwin_tool_both_bins "irecovery" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/irecovery" || return
+    download_darwin_tool_both_bins "kairos" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/kairos" || return
+    download_darwin_tool_both_bins "KPlooshFinder" "https://github.com/LukeZGD/Semaphorin/raw/refs/heads/main/Darwin/KPlooshFinder" || return
+    download_darwin_tool_both_bins "iBoot64Patcher" "https://github.com/edwin170/downr1n/raw/refs/heads/main/binaries/Darwin/iBoot64Patcher" || return
+    download_darwin_tool_both_bins "hfsplus" "https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/hfsplus" || return
+    download_darwin_tool_both_bins "tsschecker" "https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/bin/macos/tsschecker" || return
+    download_ldid_both_bins || return
+    compile_asr64_patcher_both_bins || return
+    ensure_futurerestore_macos || return
+
+    chmod +x "$BIN"/* "$BOOT"/* 2>/dev/null || true
+}
+
+ensure_futurerestore_macos() {
+    mkdir -p "$SCRIPT_DIR/futurerestore"
+
+    if [[ -x "$SCRIPT_DIR/futurerestore/futurerestore" ]]; then
+        return 0
+    fi
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to download futurerestore"
+    command -v unzip >/dev/null 2>&1 || die "unzip is required to install futurerestore"
+    command -v tar >/dev/null 2>&1 || die "tar is required to install futurerestore"
+
+    info "futurerestore missing. Downloading macOS release..."
+    rm -rf "$WORK/futurerestore_dl"
+    mkdir -p "$WORK/futurerestore_dl"
+
+    run_cmd curl -L -o "$WORK/futurerestore_dl/futurerestore.zip" "https://github.com/LukeeGD/futurerestore/releases/download/latest/futurerestore-macOS-RELEASE-main.zip" || return
+
+    (
+        cd "$WORK/futurerestore_dl" || exit 1
+        unzip -q -o futurerestore.zip
+        found_tar="$(find . -name "*.tar.xz" -type f | head -n 1)"
+        if [[ -z "$found_tar" ]]; then
+            echo "Could not find futurerestore tarball inside zip."
+            exit 1
+        fi
+        tar -xf "$found_tar"
+    ) || return
+
+    found_fr="$(find "$WORK/futurerestore_dl" -type f -name futurerestore | head -n 1)"
+    if [[ -z "$found_fr" ]]; then
+        error "Could not find futurerestore binary after extraction."
+        return 1
+    fi
+
+    cp "$found_fr" "$SCRIPT_DIR/futurerestore/futurerestore"
+    chmod +x "$SCRIPT_DIR/futurerestore/futurerestore"
+}
+
+ios10_detect_or_prompt_ecid() {
+    IOS10_ECID=""
+
+    if command -v ideviceinfo >/dev/null 2>&1; then
+        IOS10_ECID="$(ideviceinfo -k UniqueChipID 2>/dev/null | tr -d '\r\n ' || true)"
+    fi
+
+    if [[ -z "$IOS10_ECID" && -x "$BIN/irecovery" ]]; then
+        IOS10_ECID="$("$BIN/irecovery" -q 2>/dev/null | awk -F': ' '/^ECID:/ {print $2; exit}' | tr -d '\r\n ' || true)"
+    fi
+
+    if [[ -z "$IOS10_ECID" ]]; then
+        echo
+        warn "Could not auto-detect ECID."
+        echo "Enter the device ECID. Decimal or 0x hex usually works with tsschecker."
+        read -rp "ECID: " IOS10_ECID
+        IOS10_ECID="$(printf "%s" "$IOS10_ECID" | tr -d '[:space:]')"
+    fi
+
+    if [[ -z "$IOS10_ECID" ]]; then
+        error "ECID is required."
+        return 1
+    fi
+
+    success "Using ECID: $IOS10_ECID"
+}
+
+ios10_download_1033_ota_sep() {
+    local tmpdir="$WORK/ios10_sep"
+    local sep_name="sep-firmware.${BOARD_SHORT}.RELEASE.im4p"
+
+    rm -rf "$tmpdir"
+    mkdir -p "$tmpdir"
+
+    IOS10_SEP_PATH="$tmpdir/$sep_name"
+    IOS10_SEP_MANIFEST="$tmpdir/BuildManifest-SEP.plist"
+
+    info "Downloading iOS 10.3.3 OTA SEP manifest for $IOS10_IDENTIFIER..."
+    run_cmd curl -L -o "$IOS10_SEP_MANIFEST" "https://github.com/LukeZGD/Legacy-iOS-Kit/raw/refs/heads/main/resources/manifest/BuildManifest_${IOS10_IDENTIFIER}_10.3.3.plist" || return
+
+    info "Fetching $sep_name from iOS 10.3.3 OTA IPSW..."
+    (
+        cd "$tmpdir" || exit 1
+        "$BIN/pzb" -g "Firmware/all_flash/$sep_name" "$IOS10_1033_IPSW_URL"
+    ) || return
+
+    if [[ ! -f "$IOS10_SEP_PATH" ]]; then
+        error "SEP download failed. Missing $IOS10_SEP_PATH"
+        return 1
+    fi
+}
+
+ios10_fetch_shsh_for_latest() {
+    local outdir="$WORK/ios10_shsh_latest"
+    rm -rf "$outdir"
+    mkdir -p "$outdir"
+
+    info "Fetching SHSH for iOS $IOS10_LATEST_VERSION..."
+    run_cmd sudo "$BIN/tsschecker" -d "$IOS10_IDENTIFIER" -s -e "$IOS10_ECID" -i "$IOS10_LATEST_VERSION" --save-path "$outdir" || return
+
+    IOS10_SHSH_PATH="$(find "$outdir" -type f -name "*.shsh2" | head -n 1)"
+    if [[ -z "$IOS10_SHSH_PATH" ]]; then
+        error "No SHSH2 file was saved."
+        return 1
+    fi
+
+    if ! grep -q "<key>generator</key>" "$IOS10_SHSH_PATH" 2>/dev/null; then
+        error "Saved SHSH2 does not contain a generator."
+        warn "Delete $outdir and try again, or use a latest SHSH2 blob that contains a generator."
+        return 1
+    fi
+}
+
+ios10_fetch_1033_ota_shsh() {
+    local outdir="$WORK/ios10_shsh_1033"
+    rm -rf "$outdir"
+    mkdir -p "$outdir"
+
+    info "Fetching iOS 10.3.3 OTA SHSH..."
+    run_cmd sudo "$BIN/tsschecker" -d "$IOS10_IDENTIFIER" -i 10.3.3 -e "$IOS10_ECID" -o -m "$IOS10_SEP_MANIFEST" -s --save-path "$outdir" || return
+
+    IOS10_SHSH_PATH="$(find "$outdir" -type f -name "*.shsh2" | head -n 1)"
+    if [[ -z "$IOS10_SHSH_PATH" ]]; then
+        error "No iOS 10.3.3 OTA SHSH2 file was saved."
+        return 1
+    fi
+}
+
+
+ios10_copy_if_different() {
+    local src="$1"
+    local dst="$2"
+
+    if [[ "$src" == "$dst" ]]; then
+        return 0
+    fi
+
+    sudo cp -f "$src" "$dst" || return
+}
+
+ios10_copy_prepatched_iboot_aliases() {
+    local primary_ibss="$1"
+    local primary_ibec="$2"
+    local build="$3"
+    local target_build="${4:-}"
+    local b=""
+    local tag=""
+    local seen=" "
+
+    for b in "$BOARD" "$BOARD_SHORT"; do
+        [[ -n "$b" ]] || continue
+
+        for tag in "$build" "$target_build" "$IOS10_BUILD" "$IOS10_LATEST_BUILD" "14D27" "16H88"; do
+            [[ -n "$tag" ]] || continue
+            case "$seen" in
+                *" $b:$tag "*) continue ;;
+            esac
+            seen="$seen$b:$tag "
+
+            ios10_copy_if_different "$primary_ibss" "/tmp/futurerestore/ibss.$b.$tag.patched.img4" || return
+            ios10_copy_if_different "$primary_ibec" "/tmp/futurerestore/ibec.$b.$tag.patched.img4" || return
+        done
+    done
+}
+
+
+ios10_extract_ota_file_by_basename() {
+    local archive="$1"
+    local basename="$2"
+    local outdir="$3"
+    local found=""
+
+    found="$(unzip -Z1 "$archive" 2>/dev/null | awk -v b="$basename" '
+        $0 == b || $0 ~ "/" b "$" { print; exit }
+    ')"
+
+    if [[ -z "$found" ]]; then
+        error "Could not find $basename inside the signed 10.3.3 OTA package."
+        warn "This option expects the signed iOS 10.3.3 OTA zip/package, not a normal IPSW."
+        warn "Showing possible DFU/iBSS/iBEC paths from the archive:"
+        unzip -Z1 "$archive" 2>/dev/null | grep -Ei 'iBSS|iBEC|Firmware/dfu|AssetData' | head -n 40 || true
+        return 1
+    fi
+
+    info "Extracting $basename from $found..."
+    unzip -j "$archive" "$found" -d "$outdir" >/dev/null || return
+}
+
+
+ios10_prepatch_restore_iboots() {
+    local target_ipsw="$1"
+    local target_ios="$2"
+    local build="$3"
+    local w="$WORK/ios10_iboot_patch"
+    local im4m="$w/${IOS10_IDENTIFIER}.im4m"
+    local target_ibss_file="iBSS.${BOARD_SHORT}.RELEASE.im4p"
+    local target_ibec_file="iBEC.${BOARD_SHORT}.RELEASE.im4p"
+    local source_ibss_file="$target_ibss_file"
+    local source_ibec_file="$target_ibec_file"
+    local key_ios="$target_ios"
+    local ibss_src=""
+    local ibec_src=""
+    local ibss_key ibec_key
+
+   
+    if [[ "$target_ios" == "10.3.3" ]]; then
+        target_ibss_file="iBSS.iphone6.RELEASE.im4p"
+        target_ibec_file="iBEC.iphone6.RELEASE.im4p"
+        source_ibss_file="$target_ibss_file"
+        source_ibec_file="$target_ibec_file"
+    fi
+
+    rm -rf "$w"
+    mkdir -p "$w"
+    sudo mkdir -p /tmp/futurerestore
+
+    run_cmd "$BOOT/img4tool" -s "$IOS10_SHSH_PATH" -e -m "$im4m" || return
+
+    if [[ "$target_ios" == 10.1* || "$target_ios" == 10.2* ]]; then
+        key_ios="10.3"
+        source_ibss_file="iBSS.iphone6.RELEASE.im4p"
+        source_ibec_file="iBEC.iphone6.RELEASE.im4p"
+        info "Preparing iBSS/iBEC..."
+        (
+            cd "$w" || exit 1
+            "$BIN/pzb" -g "Firmware/dfu/$source_ibss_file" "$IOS10_103_IPSW_URL"
+            "$BIN/pzb" -g "Firmware/dfu/$source_ibec_file" "$IOS10_103_IPSW_URL"
+        ) || return
+    else
+        if [[ "$target_ios" == "10.3.3" ]]; then
+            ios10_extract_ota_file_by_basename "$target_ipsw" "$target_ibss_file" "$w" || return
+            ios10_extract_ota_file_by_basename "$target_ipsw" "$target_ibec_file" "$w" || return
+        else
+            info "Extracting $target_ibss_file..."
+            unzip -j "$target_ipsw" "Firmware/dfu/$target_ibss_file" -d "$w" >/dev/null || return
+            info "Extracting $target_ibec_file..."
+            unzip -j "$target_ipsw" "Firmware/dfu/$target_ibec_file" -d "$w" >/dev/null || return
+        fi
+    fi
+
+    # pzb may save files either in the current directory or inside the original ipsw path.
+    # example:
+    #   $w/ibss.iphone6.release.im4p
+    # or:
+    #   $w/firmware/dfu/ibss.iphone6.release.im4p
+    if [[ -f "$w/$source_ibss_file" ]]; then
+        ibss_src="$w/$source_ibss_file"
+    elif [[ -f "$w/Firmware/dfu/$source_ibss_file" ]]; then
+        ibss_src="$w/Firmware/dfu/$source_ibss_file"
+    else
+        ibss_src="$(find "$w" -type f -name "$source_ibss_file" | head -n 1)"
+    fi
+
+    if [[ -f "$w/$source_ibec_file" ]]; then
+        ibec_src="$w/$source_ibec_file"
+    elif [[ -f "$w/Firmware/dfu/$source_ibec_file" ]]; then
+        ibec_src="$w/Firmware/dfu/$source_ibec_file"
+    else
+        ibec_src="$(find "$w" -type f -name "$source_ibec_file" | head -n 1)"
+    fi
+
+    check_file "$ibss_src"
+    check_file "$ibec_src"
+
+    info "Found iBSS."
+    info "Found iBEC."
+
+    # do not use ios10_enc_key inside command substitution here.
+    # if a key is missing, require_enc_value/die output gets swallowed by $(...).
+    ibss_key="$(get_enc_value "$DEVICE_TYPE" "$key_ios" "IBSS")"
+    ibec_key="$(get_enc_value "$DEVICE_TYPE" "$key_ios" "IBEC")"
+
+    if [[ -z "$ibss_key" || "$ibss_key" == "MISSING" ]]; then
+        error "Missing enc_keys value for $DEVICE_TYPE | $key_ios | IBSS"
+        if [[ "$key_ios" == "10.3" ]]; then
+            warn "iOS 10.2.1 restore uses the iOS 10.3 shared iphone6 iBSS/iBEC workaround."
+            warn "Add the iOS 10.3 iBSS.iphone6.RELEASE.im4p key to enc_keys."
+        fi
+        return 1
+    fi
+
+    if [[ -z "$ibec_key" || "$ibec_key" == "MISSING" ]]; then
+        error "Missing enc_keys value for $DEVICE_TYPE | $key_ios | IBEC"
+        if [[ "$key_ios" == "10.3" ]]; then
+            warn "iOS 10.2.1 restore uses the iOS 10.3 shared iphone6 iBSS/iBEC workaround."
+            warn "Add the iOS 10.3 iBEC.iphone6.RELEASE.im4p key to enc_keys."
+        fi
+        return 1
+    fi
+
+    info "Patching iBSS..."
+    run_cmd "$BOOT/img4" -i "$ibss_src" -o "$w/iBSS.raw" -k "$ibss_key" || return
+    info "Patching iBEC..."
+    run_cmd "$BOOT/img4" -i "$ibec_src" -o "$w/iBEC.raw" -k "$ibec_key" || return
+
+    run_cmd "$BIN/iBoot64Patcher" "$w/iBSS.raw" "$w/iBSS.patched" || return
+    run_cmd "$BIN/iBoot64Patcher" "$w/iBEC.raw" "$w/iBEC.patched" -b "rd=md0 debug=0x2014e -v wdt=-1 nand-enable-reformat=1 -restore amfi=0xff cs_enforcement_disable=1" -n || return
+
+    sudo mkdir -p /tmp/futurerestore
+    sudo rm -f "/tmp/futurerestore/ibss.${BOARD}."*.patched.img4 "/tmp/futurerestore/ibec.${BOARD}."*.patched.img4 2>/dev/null || true
+    sudo rm -f "/tmp/futurerestore/ibss.${BOARD_SHORT}."*.patched.img4 "/tmp/futurerestore/ibec.${BOARD_SHORT}."*.patched.img4 2>/dev/null || true
+
+    run_cmd sudo "$BOOT/img4" -i "$w/iBSS.patched" -o "/tmp/futurerestore/ibss.${BOARD}.${build}.patched.img4" -A -T ibss -M "$im4m" || return
+    run_cmd sudo "$BOOT/img4" -i "$w/iBEC.patched" -o "/tmp/futurerestore/ibec.${BOARD}.${build}.patched.img4" -A -T ibec -M "$im4m" || return
+
+    ios10_copy_prepatched_iboot_aliases \
+        "/tmp/futurerestore/ibss.${BOARD}.${build}.patched.img4" \
+        "/tmp/futurerestore/ibec.${BOARD}.${build}.patched.img4" \
+        "$build" "$IOS10_BUILD" || return
+
+    info "Ready files:"
+    find /tmp/futurerestore -maxdepth 1 -type f \( -name "ibss.*.patched.img4" -o -name "ibec.*.patched.img4" \) -print 2>/dev/null | sort
+}
+
+ios10_patch_asr_ramdisk_to_path() {
+    local src_dmg="$1"
+    local out_im4p="$2"
+    local grow_size="$3"
+    local work_tag="$4"
+    local w="$WORK/ios10_ramdisk_${work_tag}"
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    run_cmd "$BOOT/img4" -i "$src_dmg" -o "$w/ramdisk.raw" || return
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" grow "$grow_size" || return
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" extract usr/sbin/asr "$w/asr" || return
+    run_cmd "$BOOT/asr64_patcher" "$w/asr" "$w/asr_patched" || return
+
+    "$BOOT/ldid" -e "$w/asr" > "$w/ents.plist" || true
+    if [[ -s "$w/ents.plist" ]] && grep -q "<plist" "$w/ents.plist"; then
+        run_cmd "$BOOT/ldid" -S"$w/ents.plist" "$w/asr_patched" || return
+    else
+        run_cmd "$BOOT/ldid" -S "$w/asr_patched" || return
+    fi
+
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" rm usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" add "$w/asr_patched" usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" chmod 100755 usr/sbin/asr || return
+    run_cmd "$BOOT/img4" -i "$w/ramdisk.raw" -o "$out_im4p" -T rdsk -A || return
+}
+
+ios10_get_custom_manifest_1021() {
+    local outdir="$WORK/ios10_manifest"
+    local out="$outdir/BuildManifest.plist"
+    local local_manifest="$SCRIPT_DIR/manifest/$IOS10_IDENTIFIER/10.2.1-Manifest.plist"
+
+    mkdir -p "$outdir"
+
+    if [[ -f "$local_manifest" ]]; then
+        printf "%s" "$local_manifest"
+        return 0
+    fi
+
+    echo -e "${BLUE}[INFO]${NC} Getting custom manifest..." >&2
+    echo >&2
+    echo -e "${PURPLE}>> curl -fL -o $out https://github.com/pwnerblu/surrealra1n/raw/refs/heads/main/manifest/$IOS10_IDENTIFIER/10.2.1-Manifest.plist${NC}" >&2
+
+    if curl -fL -o "$out" "https://github.com/pwnerblu/surrealra1n/raw/refs/heads/main/manifest/$IOS10_IDENTIFIER/10.2.1-Manifest.plist" >&2; then
+        printf "%s" "$out"
+        return 0
+    fi
+
+    echo -e "${RED}[ERROR]${NC} Could not get custom 10.2.1 manifest for $IOS10_IDENTIFIER." >&2
+    echo -e "${YELLOW}[WARN]${NC} Put it here if you already have surrealra1n files:" >&2
+    echo -e "${YELLOW}[WARN]${NC} $local_manifest" >&2
+    return 1
+}
+
+ios10_patch_asr_ramdisk_file() {
+    local src_dmg="$1"
+    local out_im4p="$2"
+    local w="$WORK/ios10_ramdisk"
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    run_cmd "$BOOT/img4" -i "$src_dmg" -o "$w/ramdisk.raw" || return
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" grow 60000000 || return
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" extract usr/sbin/asr "$w/asr" || return
+    run_cmd "$BOOT/asr64_patcher" "$w/asr" "$w/asr_patched" || return
+
+    "$BOOT/ldid" -e "$w/asr" > "$w/ents.plist" || true
+    if [[ -s "$w/ents.plist" ]] && grep -q "<plist" "$w/ents.plist"; then
+        run_cmd "$BOOT/ldid" -S"$w/ents.plist" "$w/asr_patched" || return
+    else
+        run_cmd "$BOOT/ldid" -S "$w/asr_patched" || return
+    fi
+
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" rm usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" add "$w/asr_patched" usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" chmod 100755 usr/sbin/asr || return
+    run_cmd "$BOOT/img4" -i "$w/ramdisk.raw" -o "$out_im4p" -A -T rdsk || return
+}
+
+ios10_make_tether_restore_files() {
+    local target_ipsw="$1"
+    local latest_ipsw="$2"
+    local restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/10.2.1"
+    local w="$WORK/ios10_make"
+    local target="$w/target"
+    local latest="$w/latest"
+    local allflash="all_flash.${BOARD}.production"
+    local target_llb="LLB.${BOARD_SHORT}.RELEASE.im4p"
+    local target_iboot="iBoot.${BOARD_SHORT}.RELEASE.im4p"
+    local latest_llb="$latest/Firmware/all_flash/LLB.iphone6.RELEASE.im4p"
+    local latest_iboot="$latest/Firmware/all_flash/iBoot.iphone6.RELEASE.im4p"
+    local target_kernel="$target/kernelcache.release.${BOARD_SHORT}"
+    local restore_ramdisk=""
+
+    rm -rf "$w"
+    mkdir -p "$target" "$latest" "$restoredir"
+
+    info "Unpacking IPSWs..."
+    run_cmd unzip -q "$target_ipsw" -d "$target" || return
+    run_cmd unzip -q "$latest_ipsw" -d "$latest" || return
+
+    check_file "$latest_llb"
+    check_file "$latest_iboot"
+    check_file "$target/Firmware/all_flash/$allflash/$target_llb"
+    check_file "$target/Firmware/all_flash/$allflash/$target_iboot"
+    check_file "$target_kernel"
+
+    info "Adding LLB/iBoot..."
+    cp "$latest_llb" "$target/Firmware/all_flash/$allflash/$target_llb" || return
+    cp "$latest_iboot" "$target/Firmware/all_flash/$allflash/$target_iboot" || return
+
+    info "Building custom IPSW..."
+    rm -f "$restoredir/custom.ipsw"
+    (
+        cd "$target" || exit 1
+        zip -0 -q -r "$restoredir/custom.ipsw" *
+    ) || return
+
+    restore_ramdisk="$(ios10_find_dmg "$target" smallest)"
+    if [[ -z "$restore_ramdisk" ]]; then
+        error "Could not find restore ramdisk DMG."
+        return 1
+    fi
+
+    info "Making kernel file..."
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$w/kernel.raw" || return
+    run_cmd "$BIN/KPlooshFinder" "$w/kernel.raw" "$w/kernel.patched" || return
+    run_cmd "$BOOT/kerneldiff" "$w/kernel.raw" "$w/kernel.patched" "$w/kernel.diff" || return
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" -J || \
+        run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" || return
+
+    info "Making ramdisk file..."
+    ios10_patch_asr_ramdisk_file "$restore_ramdisk" "$restoredir/ramdisk.im4p" || return
+
+    rm -f "$restoredir/updateramdisk.im4p"
+    echo "v5_surreal_target_base" > "$restoredir/.5sd7_ios10_custom_method"
+
+    success "iOS 10.2.1 restore files ready in $restoredir"
+}
+
+ios10_prepare_custom_restore_mode() {
+    local custom_ipsw="$1"
+    local shsh_path="$2"
+    local w="$WORK/ios10_custom_restore_boot"
+    local ibss_file="iBSS.iphone6.RELEASE.im4p"
+    local ibec_file="iBEC.iphone6.RELEASE.im4p"
+    local mode=""
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    info "Preparing restore mode..."
+    run_cmd "$BOOT/img4tool" -s "$shsh_path" -e -m "$w/im4m" || return
+
+    unzip -j "$custom_ipsw" "Firmware/dfu/$ibss_file" -d "$w" >/dev/null || return
+    unzip -j "$custom_ipsw" "Firmware/dfu/$ibec_file" -d "$w" >/dev/null || return
+
+    run_cmd "$BOOT/img4" -i "$w/$ibss_file" -o "$w/iBSS.img4" -M "$w/im4m" -T ibss || return
+    run_cmd "$BOOT/img4" -i "$w/$ibec_file" -o "$w/iBEC.img4" -M "$w/im4m" -T ibec || return
+
+    run_cmd "$BIN/irecovery" -f "$w/iBSS.img4" || return
+    run_cmd "$BIN/irecovery" -f "$w/iBEC.img4" || return
+
+    sleep 3
+    mode="$("$BIN/irecovery" -q 2>/dev/null | awk -F': ' '/^MODE:/ {print $2; exit}' | tr -d '\r\n ' || true)"
+
+    if [[ "$mode" != "Recovery" ]]; then
+        error "Device did not enter Recovery after sending custom iBSS/iBEC. Current mode: ${mode:-unknown}"
+        return 1
+    fi
+
+    success "Device is in Recovery mode for custom futurerestore."
+}
+
+ios10_run_futurerestore_plain() {
+    local exit_code=0
+
+    info "Starting futurerestore custom restore..."
+    echo
+    echo -e "${PURPLE}>> sudo $SCRIPT_DIR/futurerestore/futurerestore $*${NC}"
+
+    set +e
+    sudo "$SCRIPT_DIR/futurerestore/futurerestore" "$@"
+    exit_code=$?
+    set -e
+
+    return "$exit_code"
+}
+
+ios10_prepare_tether_boot_files() {
+    local target_ipsw="$1"
+    local shsh_path="$2"
+    local w="$WORK/ios10_boot"
+    local ibss_file="iBSS.${BOARD_SHORT}.RELEASE.im4p"
+    local ibec_file="iBEC.${BOARD_SHORT}.RELEASE.im4p"
+    local dtree_file="DeviceTree.${BOARD}.im4p"
+    local kernel_file="kernelcache.release.${BOARD_SHORT}"
+    local ibss_key ibec_key
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    # ios 10.2.1 regular boot path only decrypts ibss/ibec. devicetree and kernel are wrapped as img4 as-is.
+    ibss_key="$(ios10_enc_key "10.2.1" "IBSS")" || return
+    ibec_key="$(ios10_enc_key "10.2.1" "IBEC")" || return
+
+    run_cmd "$BOOT/img4tool" -s "$shsh_path" -e -m "$w/im4m" || return
+
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibss_file" -d "$w" >/dev/null || return
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibec_file" -d "$w" >/dev/null || return
+    unzip -j "$target_ipsw" "Firmware/all_flash/all_flash.${BOARD}.production/$dtree_file" -d "$w" >/dev/null || return
+    unzip -j "$target_ipsw" "$kernel_file" -d "$w" >/dev/null || return
+
+    run_cmd "$BOOT/img4" -i "$w/$ibss_file" -o "$w/iBSS.raw" -k "$ibss_key" || return
+    run_cmd "$BOOT/img4" -i "$w/$ibec_file" -o "$w/iBEC.raw" -k "$ibec_key" || return
+
+    run_cmd "$BOOT/kairos" "$w/iBSS.raw" "$w/iBSS.patched" || return
+    run_cmd "$BOOT/kairos" "$w/iBEC.raw" "$w/iBEC.patched" -n -b "-v debug=0x09" -c "go" 0x830000300 || return
+
+    run_cmd "$BOOT/img4" -i "$w/iBSS.patched" -o "$BOOT/iBSS.img4" -A -T ibss -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/iBEC.patched" -o "$BOOT/iBEC.img4" -A -T ibec -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/$dtree_file" -o "$BOOT/DeviceTree.img4" -T rdtr -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -M "$w/im4m" || return
+
+    success "iOS 10.2.1 tether boot files were written to bin2boot."
+}
+
+
+ios10_shsh_generator() {
+    awk '
+        /<key>generator<\/key>/ {
+            getline
+            gsub(/.*<string>/, "")
+            gsub(/<\/string>.*/, "")
+            print
+            exit
+        }
+    ' "$IOS10_SHSH_PATH"
+}
+
+ios10_wait_mode() {
+    local wanted="$1"
+    local i
+    local mode=""
+
+    for i in {1..25}; do
+        mode="$("$BIN/irecovery" -q 2>/dev/null | awk -F": " "/^MODE:/ {print \$2; exit}" | tr -d "\r\n " || true)"
+        if [[ "$mode" == "$wanted" ]]; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    error "Timed out waiting for $wanted mode. Last mode: ${mode:-unknown}"
+    return 1
+}
+
+ios10_enter_pwnrecovery_manual() {
+    local build="$1"
+    local ibss="/tmp/futurerestore/ibss.${BOARD}.${build}.patched.img4"
+    local ibec="/tmp/futurerestore/ibec.${BOARD}.${build}.patched.img4"
+    local generator=""
+
+    check_file "$ibss"
+    check_file "$ibec"
+
+    generator="$(ios10_shsh_generator)"
+    if [[ -z "$generator" ]]; then
+        error "Could not read generator from SHSH2."
+        return 1
+    fi
+
+    info "Booting restore chain..."
+
+    run_cmd "$BIN/irecovery" -f "$ibss" || return
+    sleep 5
+    ios10_wait_mode "DFU" || return
+
+    run_cmd "$BIN/irecovery" -f "$ibec" || return
+    sleep 7
+    ios10_wait_mode "Recovery" || return
+
+    info "Setting nonce..."
+    run_cmd "$BIN/irecovery" -c "setenv com.apple.System.boot-nonce $generator" || return
+    run_cmd "$BIN/irecovery" -c "saveenv" || return
+    sleep 2
+
+    info "Restarting iBEC..."
+    run_cmd "$BIN/irecovery" -f "$ibec" || return
+    run_cmd "$BIN/irecovery" -c "go" || return
+    sleep 7
+    ios10_wait_mode "Recovery" || return
+
+    success "Device is in pwnRecovery."
+}
+
+
+ios10_run_futurerestore_retry() {
+    local exit_code=0
+    local attempt=1
+    local log="$WORK/ios10_futurerestore.log"
+
+    mkdir -p "$WORK"
+
+    while true; do
+        info "Starting futurerestore attempt $attempt..."
+        echo
+        echo -e "${PURPLE}>> sudo FUTURERESTORE_I_SOLEMNLY_SWEAR_THAT_I_AM_UP_TO_NO_GOOD=1 $SCRIPT_DIR/futurerestore/futurerestore $*${NC}"
+
+        rm -f "$log"
+
+        set +e
+        sudo FUTURERESTORE_I_SOLEMNLY_SWEAR_THAT_I_AM_UP_TO_NO_GOOD=1 "$SCRIPT_DIR/futurerestore/futurerestore" "$@" > >(tee "$log") 2> >(tee -a "$log" >&2)
+        exit_code=$?
+        set -e
+
+        if grep -Fq "Done: restoring failed" "$log" 2>/dev/null || \
+           grep -Fq "[exception]:" "$log" 2>/dev/null || \
+           grep -Fq "assure failed" "$log" 2>/dev/null; then
+            exit_code=1
+        fi
+
+        if grep -Fq "Patching iBEC" "$log" 2>/dev/null && grep -Fq "assure failed" "$log" 2>/dev/null; then
+            warn "futurerestore tried to patch iBEC itself. The prepatched cache was not used."
+            warn "Check that the printed /tmp/futurerestore list includes both 14D27 and 16H88."
+        fi
+
+        if [[ "$exit_code" -eq 139 ]]; then
+            warn "futurerestore segfaulted. Retrying..."
+            attempt=$((attempt + 1))
+            sleep 2
+            continue
+        fi
+
+        return "$exit_code"
+    done
+}
+
+
+ios10_run_futurerestore_recovery() {
+    local exit_code=0
+    local log="$WORK/ios10_futurerestore.log"
+
+    mkdir -p "$WORK"
+    rm -f "$log"
+
+    info "Starting futurerestore..."
+    echo
+    echo -e "${PURPLE}>> sudo FUTURERESTORE_I_SOLEMNLY_SWEAR_THAT_I_AM_UP_TO_NO_GOOD=1 $SCRIPT_DIR/futurerestore/futurerestore $*${NC}"
+
+    set +e
+    sudo FUTURERESTORE_I_SOLEMNLY_SWEAR_THAT_I_AM_UP_TO_NO_GOOD=1 "$SCRIPT_DIR/futurerestore/futurerestore" "$@" > >(tee "$log") 2> >(tee -a "$log" >&2)
+    exit_code=$?
+    set -e
+
+    if grep -Fq "Done: restoring failed" "$log" 2>/dev/null || \
+       grep -Fq "[exception]:" "$log" 2>/dev/null || \
+       grep -Fq "assure failed" "$log" 2>/dev/null; then
+        exit_code=1
+    fi
+
+    return "$exit_code"
+}
+
+
+ios10_1021_restore() {
+    header
+    warn "iPhone 5s iOS 10.2.1 tethered restore path."
+    warn "This makes restore files, then runs futurerestore."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="10.2.1"
+    TARGET_IOS_DISPLAY="10.2.1"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 10.2.1 IPSW: ")"
+    echo
+    IOS10_LATEST_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.5.8/latest IPSW: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_LATEST_IPSW"
+
+    ios10_set_build_from_ipsw_or_default "$IOS10_TARGET_IPSW" "14D27"
+    IOS10_LATEST_VERSION="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductVersion)"
+    [[ -n "$IOS10_LATEST_VERSION" ]] || IOS10_LATEST_VERSION="12.5.8"
+    IOS10_LATEST_BUILD="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductBuildVersion)"
+    [[ -n "$IOS10_LATEST_BUILD" ]] || IOS10_LATEST_BUILD="16H88"
+    IOS10_LATEST_BUILD="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductBuildVersion)"
+    [[ -n "$IOS10_LATEST_BUILD" ]] || IOS10_LATEST_BUILD="16H88"
+
+    ios10_detect_or_prompt_ecid || { pause; return; }
+
+    pwn_dfu_loop "$BIN" "yes" || { pause; return; }
+    cd "$SCRIPT_DIR" || return
+
+    ios10_download_1033_ota_sep || { pause; return; }
+    ios10_fetch_shsh_for_latest || { pause; return; }
+
+    restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/10.2.1"
+    if [[ ! -f "$restoredir/custom.ipsw" || ! -f "$restoredir/ramdisk.im4p" || ! -f "$restoredir/kernel.im4p" || ! -f "$restoredir/.5sd7_ios10_custom_method" ]] || ! grep -q "v5_surreal_target_base" "$restoredir/.5sd7_ios10_custom_method" 2>/dev/null; then
+        warn "Rebuilding iOS 10 restore files."
+        rm -rf "$restoredir"
+        ios10_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+    else
+        warn "Existing iOS 10.2.1 restore files found."
+        read -rp "Rebuild them? (y/n): " rebuild
+        if [[ "$rebuild" == "y" || "$rebuild" == "Y" ]]; then
+            rm -rf "$restoredir"
+            ios10_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+        fi
+    fi
+
+    IOS10_RESTORE_BUILD="$(ios10_parse_plist_value "$restoredir/custom.ipsw" ProductBuildVersion)"
+    [[ -n "$IOS10_RESTORE_BUILD" ]] || IOS10_RESTORE_BUILD="$IOS10_BUILD"
+    info "Using iBoot tag: $IOS10_RESTORE_BUILD"
+
+    ios10_prepatch_restore_iboots "$IOS10_TARGET_IPSW" "10.2.1" "$IOS10_RESTORE_BUILD" || { pause; return; }
+
+    ios10_run_futurerestore_retry \
+        -t "$IOS10_SHSH_PATH" --skip-blob --use-pwndfu \
+        --rdsk "$restoredir/ramdisk.im4p" \
+        --rkrn "$restoredir/kernel.im4p" \
+        --custom-latest "$IOS10_LATEST_VERSION" \
+        --latest-baseband --sep "$IOS10_SEP_PATH" --sep-manifest "$IOS10_SEP_MANIFEST" \
+        --no-rsep "$restoredir/custom.ipsw"
+
+    fr_status=$?
+    if [[ "$fr_status" -ne 0 ]]; then
+        error "futurerestore failed with exit code $fr_status"
+        warn "Not building boot files because the restore did not finish."
+        pause
+        return
+    fi
+
+    success "iOS 10.2.1 tethered restore finished."
+    ios10_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || {
+        warn "Restore finished, but boot file build failed."
+        pause
+        return
+    }
+
+    warn "You can now use the new iOS 10 tether boot option, or run it now."
+    read -rp "Boot now? (y/n): " bootnow
+    if [[ "$bootnow" == "y" || "$bootnow" == "Y" ]]; then
+        ios10_boot
+    else
+        pause
+    fi
+}
+
+
+ios10_1033_restore() {
+    header
+    warn "iPhone 5s iOS 10.3.3 OTA untethered restore path."
+    warn "Signing is OTA-only, but futurerestore still needs a normal 10.3.3 Restore IPSW as the restore payload."
+    warn "This fetches 10.3.3 OTA blobs using tsschecker and restores with futurerestore."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="10.3.3"
+    TARGET_IOS_DISPLAY="10.3.3"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the signed $DEVICE_TYPE iPhone 5s iOS 10.3.3 OTA zip/package: ")"
+    echo
+    IOS10_1033_IPSW="$(read_drag_path "Drag the normal $DEVICE_TYPE iPhone 5s iOS 10.3.3 Restore IPSW payload: ")"
+    echo
+    IOS10_LATEST_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.5.8/latest IPSW for baseband version detection: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_1033_IPSW"
+    check_file "$IOS10_LATEST_IPSW"
+
+    # the signing path is ota, but futurerestore's final ipsw argument still needs a normal restore ipsw.
+    # the ota zip is used for ota shsh/manifest/ibss/ibec handling only.
+    ios10_set_build_from_ipsw_or_default "$IOS10_1033_IPSW" "14G60"
+    IOS10_LATEST_VERSION="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductVersion)"
+    [[ -n "$IOS10_LATEST_VERSION" ]] || IOS10_LATEST_VERSION="12.5.8"
+
+    ios10_detect_or_prompt_ecid || { pause; return; }
+
+    pwn_dfu_loop "$BIN" "yes" || { pause; return; }
+    cd "$SCRIPT_DIR" || return
+
+    ios10_download_1033_ota_sep || { pause; return; }
+    ios10_fetch_1033_ota_shsh || { pause; return; }
+    ios10_prepatch_restore_iboots "$IOS10_TARGET_IPSW" "10.3.3" "$IOS10_BUILD" || { pause; return; }
+
+    info "Using OTA SHSH/manifest with normal 10.3.3 Restore IPSW payload."
+    info "OTA package: $IOS10_TARGET_IPSW"
+    info "Restore IPSW payload: $IOS10_1033_IPSW"
+
+    ios10_run_futurerestore_retry \
+        -t "$IOS10_SHSH_PATH" --use-pwndfu \
+        --sep "$IOS10_SEP_PATH" --sep-manifest "$IOS10_SEP_MANIFEST" \
+        --custom-latest "$IOS10_LATEST_VERSION" \
+        --latest-baseband --no-rsep "$IOS10_1033_IPSW"
+
+    fr_status=$?
+    if [[ "$fr_status" -ne 0 ]]; then
+        error "futurerestore failed with exit code $fr_status"
+        pause
+        return
+    fi
+
+    success "iOS 10.3.3 untethered restore finished."
+    pause
+}
+
+ios10_boot() {
+    header
+    check_boot_tools
+    make_executable
+
+    check_file "$BOOT/iBSS.img4"
+    check_file "$BOOT/iBEC.img4"
+    check_file "$BOOT/DeviceTree.img4"
+    check_file "$BOOT/Kernelcache.img4"
+
+    warn "This boots the iOS 10 boot files currently in bin2boot."
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    pwn_dfu_loop "$BOOT" "yes" || {
+        error "pwnDFU/reset failed."
+        pause
+        return
+    }
+
+    cd "$BOOT" || die "Could not cd to bin2boot"
+    run_cmd ./5sboot.sh || {
+        error "5sboot.sh failed."
+        pause
+        return
+    }
+
+    success "iOS 10 boot script finished."
+    pause
+}
+
 
 #########################################
 # main menui
@@ -1652,14 +2740,16 @@ main_menu() {
         header
 
         echo "WARNING:"
-        echo "This tool is for iPhone 5s iOS 7.x/8.x/9.3.x tethered downgrades only."
+        echo "This tool is for iPhone 5s legacy restores and downgrades only."
         echo
         echo "Supported:"
         echo " - GSM  / n51ap / iPhone6,1"
         echo " - CDMA / n53ap / iPhone6,2"
         echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0, 8.4, 9.3.2, 9.3.4"
+        echo " - iOS 10.2.1 tethered restore"
+        echo " - iOS 10.3.3 OTA untethered restore"
         echo
-        echo "Unsupported: below 7.0.6, iOS 8.0.1-9.3.3, iOS 9.3.5+, iPhone 5c, other devices."
+        echo "Unsupported: below 7.0.6, iPhone 5c, other devices, and random in-between builds this script does not handle."
         echo
         echo "Menu"
         echo "----"
@@ -1671,6 +2761,9 @@ main_menu() {
         echo "6) Patch iOS 8/9 dyld Shared Cache"
         echo "7) Full Build + Restore + Boot"
         echo "8) About / Requirements"
+        echo "9) iOS 10.2.1 Tethered Restore"
+        echo "10) iOS 10.3.3 OTA Untethered Restore"
+        echo "11) Tether Boot iOS 10 Files"
         echo "0) Exit"
         echo
 
@@ -1685,6 +2778,9 @@ main_menu() {
             6) patch_ios8_9_dyld; restore_active_restore_tools_silent ;;
             7) full_restore_and_boot; restore_active_restore_tools_silent ;;
             8) about_screen; restore_active_restore_tools_silent ;;
+            9) ios10_1021_restore; restore_active_restore_tools_silent ;;
+            10) ios10_1033_restore; restore_active_restore_tools_silent ;;
+            11) ios10_boot; restore_active_restore_tools_silent ;;
             0) restore_active_restore_tools_silent; exit 0 ;;
             *) error "Invalid choice"; sleep 1 ;;
         esac
