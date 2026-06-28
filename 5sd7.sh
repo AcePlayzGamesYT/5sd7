@@ -2,10 +2,10 @@
 
 #########################################
 # iphone 5s legacy ios resotre downgrade tool
-# gsm/cdma ipsw builder + restore + boot
+# gsm/cdma ipsw builder restore and bot
 #########################################
 
-VERSION="3.0-beta1"
+VERSION="3.0-beta2"
 
 #########################################
 # colors 
@@ -3394,6 +3394,34 @@ ios10_boot() {
     ios_boot_marked
 }
 
+update_latest_signed_ios() {
+    header
+    check_restore_tools
+    make_executable
+
+    warn "This updates to the latest signed iOS and is untethered."
+    echo
+    LATEST_SIGNED_IPSW="$(read_drag_path "Drag the latest signed iOS IPSW: ")"
+
+    check_file "$LATEST_SIGNED_IPSW"
+
+    echo
+    read -rp "Run idevicerestore now? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    cd "$BIN" || die "Could not cd to bin"
+
+    run_cmd ./idevicerestore "$LATEST_SIGNED_IPSW" || {
+        error "Update failed."
+        pause
+        return
+    }
+
+    success "Update command finished."
+    pause
+}
+
+
 main_menu() {
     while true; do
         header
@@ -3430,6 +3458,7 @@ main_menu() {
         echo "14) Build iOS 11.3 Boot Files Only"
         echo "15) iOS 12.0 Tethered Restore"
         echo "16) Build iOS 12.0 Boot Files Only"
+        echo "17) Update To Latest Signed iOS"
         echo "0) Exit"
         echo
 
@@ -3452,6 +3481,7 @@ main_menu() {
             14) ios11_build_boot_only; restore_active_restore_tools_silent ;;
             15) ios12_120_restore; restore_active_restore_tools_silent ;;
             16) ios12_build_boot_only; restore_active_restore_tools_silent ;;
+            17) update_latest_signed_ios; restore_active_restore_tools_silent ;;
             0) restore_active_restore_tools_silent; exit 0 ;;
             *) error "Invalid choice"; sleep 1 ;;
         esac
