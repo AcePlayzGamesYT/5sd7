@@ -1,4 +1,4 @@
-# 5sd7 Tethered Downgrade Tool for iPhone 5s (iOS 7.0.6 – 9.3.4)
+# 5sd7 Tethered Downgrade Tool for iPhone 5s (iOS 7.0.6 – 10.3.3)
 
 > [!IMPORTANT]
 > Some third-party tools are **downloaded automatically** by 5sd7 when required.
@@ -42,6 +42,8 @@ Supported firmware:
 * iOS 8.4
 * iOS 9.3.2
 * iOS 9.3.4
+* iOS 10.2.1
+* iOS 10.3.3
 
 Features include:
 
@@ -69,6 +71,9 @@ Features include:
 * GSM (iPhone6,1 / n51ap) → iOS 7.1.2
 * GSM (iPhone6,1 / n51ap) → iOS 8.0
 * GSM (iPhone6,1 / n51ap) → iOS 9.3.4
+* GSM (iPhone6,1 / n51ap) → iOS 9.3.2
+* GSM (iPhone6,1 / n51ap) → iOS 10.2.1
+* GSM (iPhone6,1 / n51ap) → iOS 10.3.3
 * CDMA (iPhone6,2 / n53ap) → iOS 7.1.2
 
 ## Very Likely Working
@@ -80,7 +85,6 @@ Because the patching workflow is identical:
 * iOS 7.0.6
 * iOS 7.1
 * iOS 7.1.1
-* iOS 9.3.2
 * iOS 8.4
 
 ### CDMA
@@ -92,6 +96,8 @@ Because the patching workflow is identical:
 * iOS 8.4
 * iOS 9.3.2
 * iOS 9.3.4
+* iOS 10.2.1
+* iOS 10.3.3
 
 ---
 
