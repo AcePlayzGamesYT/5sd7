@@ -2,10 +2,10 @@
 
 #########################################
 # iphone 5s legacy ios resotre downgrade tool
-# gsm/cdma ipsw builder restore boot
+# gsm/cdma ipsw builder + restore + boot
 #########################################
 
-VERSION="2.3"
+VERSION="2.4"
 
 #########################################
 # colors 
@@ -297,7 +297,7 @@ refresh_restore_tool_profile_for_target() {
     local profile img4_url idevicerestore_url
 
     if [[ "$TARGET_IOS" == 9.* ]]; then
-        profile="ios9_surrealra1n"
+        profile="ios9_restore_profile"
         img4_url="$IOS9_IMG4_URL"
         idevicerestore_url="$IOS9_IDEVICERESTORE_URL"
         info "Refreshing iOS 9 tool profile: img4 with -J and idevicerestore with -y..."
@@ -324,7 +324,7 @@ apply_restore_tool_profile_for_target() {
 
     local profile
     if [[ "$TARGET_IOS" == 9.* ]]; then
-        profile="ios9_surrealra1n"
+        profile="ios9_restore_profile"
     else
         profile="legacy_ios7_8"
     fi
@@ -1017,7 +1017,7 @@ build_modified_ipsw() {
     echo "iOS 12 RootFS: $IOS12_ROOTFS"
 
     if [[ "$TARGET_IOS" == 9.* ]]; then
-        info "Rebuilding iOS 9 root filesystem DMG like surrealra1n..."
+        info "Rebuilding iOS 9 root filesystem DMG..."
         rm -f "$BUILD_DIR/rootfs.raw"
         run_cmd "$BOOT/dmg" extract "$IOS7_ROOTFS" "$BUILD_DIR/rootfs.raw" -k "$ROOTFS_KEY" || return
         rm -f "$IOS12_ROOTFS"
@@ -1121,7 +1121,7 @@ success "DeviceTree patched. Replaced $PATCH_COUNT occurrence(s) of content-prot
 
     info "Applying kernel patch to iOS 12 IPSW destination kernelcache without signing..."
     if [[ "$TARGET_IOS" == 9.* ]]; then
-        info "Packing iOS 9 restore kernelcache with img4 -J like surrealra1n..."
+        info "Packing iOS 9 restore kernelcache with img4 -J..."
         run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn -J || return
     else
         run_cmd "$BOOT/img4" -i kcache.im4p -o "$IOS12_KCACHE_IM4P" -P kcache.bpatch -T rkrn || return
@@ -1389,7 +1389,7 @@ build_boot_files() {
 
     info "Building Kernelcache.img4..."
     if [[ "$TARGET_IOS" == 9.* ]]; then
-        info "Packing iOS 9 boot Kernelcache with img4 -J like surrealra1n..."
+        info "Packing iOS 9 boot Kernelcache with img4 -J..."
         run_cmd ./img4 -i kcache.im4p -o Kernelcache.img4 -P kcache.bpatch -T rkrn -M im4m -J || return
     else
         run_cmd ./img4 -i kcache.im4p -o Kernelcache.img4 -P kcache.bpatch -T rkrn -M im4m || return
@@ -1691,7 +1691,7 @@ about_screen() {
     echo "Required tools:"
     echo " - gaster"
     echo " - idevicerestore"
-    echo " - iOS 9 temporarily refreshes img4/idevicerestore to the surrealra1n profile (-J/-y)"
+    echo " - iOS 9 temporarily refreshes img4/idevicerestore to the iOS 9 restore profile (-J/-y)"
     echo " - iOS 7/8 temporarily refreshes img4/idevicerestore to the legacy profile (-e/no -J)"
     echo " - img4"
     echo " - img4tool"
@@ -2227,7 +2227,7 @@ ios10_get_custom_manifest_1021() {
     fi
 
     echo -e "${RED}[ERROR]${NC} Could not get custom 10.2.1 manifest for $IOS10_IDENTIFIER." >&2
-    echo -e "${YELLOW}[WARN]${NC} Put it here if you already have surrealra1n files:" >&2
+    echo -e "${YELLOW}[WARN]${NC} Put it here if you already have local manifest files:" >&2
     echo -e "${YELLOW}[WARN]${NC} $local_manifest" >&2
     return 1
 }
