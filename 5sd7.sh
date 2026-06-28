@@ -5,7 +5,7 @@
 # gsm/cdma ipsw builder + restore + boot
 #########################################
 
-VERSION="2.4"
+VERSION="3.0-beta1"
 
 #########################################
 # colors 
@@ -1638,6 +1638,8 @@ full_restore_and_boot() {
     echo "1) Legacy iOS 7/8/9 tethered flow"
     echo "2) iOS 10.2.1 tethered flow"
     echo "3) iOS 10.3.3 OTA untethered flow"
+    echo "4) iOS 11.3 tethered flow"
+    echo "5) iOS 12.0 tethered flow"
     echo
     read -rp "Choice: " flow_choice
 
@@ -1645,6 +1647,8 @@ full_restore_and_boot() {
         1) full_old ;;
         2) full_1021 ;;
         3) full_1033 ;;
+        4) ios11_113_restore ;;
+        5) ios12_120_restore ;;
         *)
             error "Invalid full flow choice."
             pause
@@ -1676,6 +1680,8 @@ about_screen() {
     echo " - iOS 9.3.4"
     echo " - iOS 10.2.1 tethered"
     echo " - iOS 10.3.3 OTA untethered"
+    echo " - iOS 11.3 tethered"
+    echo " - iOS 12.0 tethered"
     echo
     echo "Unsupported:"
     echo " - Below iOS 7.0.6"
@@ -1714,6 +1720,9 @@ about_screen() {
     echo " - This script does not include Apple firmware files."
     echo " - The user supplies IPSWs, OTA packages, and SHSH blobs."
     echo " - iOS 10.3.3 uses OTA signing, but still needs the normal restore IPSW as payload."
+    echo " - iOS 11.3 tethered uses latest signed 12.5.8 blobs/SEP."
+    echo " - iOS 12.0 tethered uses latest signed 12.5.8 blobs/SEP."
+    echo " - iOS 10/11/12/12 boot files can be rebuilt from the menu if bin2boot gets wiped."
 
     pause
 }
@@ -2066,7 +2075,7 @@ ios10_prepatch_restore_iboots() {
     local ibss_key ibec_key
 
    
-    if [[ "$target_ios" == "10.3.3" ]]; then
+    if [[ "$target_ios" == "10.3.3" || "$target_ios" == 11.* || "$target_ios" == 12.* ]]; then
         target_ibss_file="iBSS.iphone6.RELEASE.im4p"
         target_ibec_file="iBEC.iphone6.RELEASE.im4p"
         source_ibss_file="$target_ibss_file"
@@ -2316,7 +2325,7 @@ ios10_make_tether_restore_files() {
     ios10_patch_asr_ramdisk_file "$restore_ramdisk" "$restoredir/ramdisk.im4p" || return
 
     rm -f "$restoredir/updateramdisk.im4p"
-    echo "v5_surreal_target_base" > "$restoredir/.5sd7_ios10_custom_method"
+    echo "v5_target_base_restore" > "$restoredir/.5sd7_ios10_custom_method"
 
     success "iOS 10.2.1 restore files ready in $restoredir"
 }
@@ -2370,6 +2379,150 @@ ios10_run_futurerestore_plain() {
     return "$exit_code"
 }
 
+
+ios_bootset_save() {
+    local tag="$1"
+    local device="$2"
+    local board="$3"
+    local dir="$BOOT/bootsets/$tag"
+
+    mkdir -p "$dir"
+
+    cp -f "$BOOT/iBSS.img4" "$dir/iBSS.img4" || return
+    cp -f "$BOOT/iBEC.img4" "$dir/iBEC.img4" || return
+    cp -f "$BOOT/DeviceTree.img4" "$dir/DeviceTree.img4" || return
+    cp -f "$BOOT/Kernelcache.img4" "$dir/Kernelcache.img4" || return
+
+    {
+        echo "ios=$tag"
+        echo "device=$device"
+        echo "board=$board"
+        echo "created=$(date '+%Y-%m-%d %H:%M:%S')"
+    } > "$dir/info"
+
+    echo "$tag:$device:$board" > "$BOOT/.5sd7_boot_target"
+    success "Saved marked boot set: iOS $tag / $device / $board"
+}
+
+ios_bootset_load() {
+    local tag="$1"
+    local dir="$BOOT/bootsets/$tag"
+
+    check_file "$dir/iBSS.img4"
+    check_file "$dir/iBEC.img4"
+    check_file "$dir/DeviceTree.img4"
+    check_file "$dir/Kernelcache.img4"
+
+    cp -f "$dir/iBSS.img4" "$BOOT/iBSS.img4" || return
+    cp -f "$dir/iBEC.img4" "$BOOT/iBEC.img4" || return
+    cp -f "$dir/DeviceTree.img4" "$BOOT/DeviceTree.img4" || return
+    cp -f "$dir/Kernelcache.img4" "$BOOT/Kernelcache.img4" || return
+
+    if [[ -f "$dir/info" ]]; then
+        local device board
+        device="$(awk -F= '/^device=/{print $2; exit}' "$dir/info")"
+        board="$(awk -F= '/^board=/{print $2; exit}' "$dir/info")"
+        echo "$tag:${device:-unknown}:${board:-unknown}" > "$BOOT/.5sd7_boot_target"
+    else
+        echo "$tag:unknown:unknown" > "$BOOT/.5sd7_boot_target"
+    fi
+}
+
+ios_bootset_pick() {
+    local sets=()
+    local dir tag i choice
+
+    if [[ -d "$BOOT/bootsets" ]]; then
+        while IFS= read -r dir; do
+            tag="$(basename "$dir")"
+            [[ -f "$dir/iBSS.img4" && -f "$dir/iBEC.img4" && -f "$dir/DeviceTree.img4" && -f "$dir/Kernelcache.img4" ]] || continue
+            sets+=("$tag")
+        done < <(find "$BOOT/bootsets" -mindepth 1 -maxdepth 1 -type d | sort)
+    fi
+
+    if [[ "${#sets[@]}" -eq 0 ]]; then
+        if [[ -f "$BOOT/.5sd7_boot_target" ]]; then
+            tag="$(cut -d: -f1 "$BOOT/.5sd7_boot_target")"
+            [[ -n "$tag" ]] && sets+=("$tag")
+        fi
+    fi
+
+    if [[ "${#sets[@]}" -eq 0 ]]; then
+        error "No marked iOS 10/11/12 boot sets found." >&2
+        warn "Run an iOS 10/11/12 restore or build boot files option first." >&2
+        return 1
+    fi
+
+    if [[ "${#sets[@]}" -eq 1 ]]; then
+        printf "%s" "${sets[0]}"
+        return 0
+    fi
+
+    echo "Marked boot sets:" >&2
+    echo >&2
+    i=1
+    for tag in "${sets[@]}"; do
+        if [[ -f "$BOOT/bootsets/$tag/info" ]]; then
+            echo "$i) iOS $tag  ($(tr '\n' ' ' < "$BOOT/bootsets/$tag/info"))" >&2
+        else
+            echo "$i) iOS $tag" >&2
+        fi
+        i=$((i + 1))
+    done
+    echo >&2
+    read -rp "Boot which iOS? " choice < /dev/tty
+
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 || "$choice" -gt "${#sets[@]}" ]]; then
+        error "Invalid boot set choice." >&2
+        return 1
+    fi
+
+    printf "%s" "${sets[$((choice - 1))]}"
+}
+
+ios_boot_marked() {
+    header
+    check_boot_tools
+    make_executable
+
+    local tag
+
+    tag="$(ios_bootset_pick)" || { pause; return; }
+
+    if [[ -d "$BOOT/bootsets/$tag" ]]; then
+        info "Loading marked iOS $tag boot files into bin2boot..."
+        ios_bootset_load "$tag" || { pause; return; }
+    else
+        warn "Using current bin2boot files marked as iOS $tag."
+    fi
+
+    check_file "$BOOT/iBSS.img4"
+    check_file "$BOOT/iBEC.img4"
+    check_file "$BOOT/DeviceTree.img4"
+    check_file "$BOOT/Kernelcache.img4"
+
+    warn "This boots the marked iOS $tag boot files currently in bin2boot."
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    pwn_dfu_loop "$BOOT" "yes" || {
+        error "pwnDFU/reset failed."
+        pause
+        return
+    }
+
+    cd "$BOOT" || die "Could not cd to bin2boot"
+    run_cmd ./5sboot.sh || {
+        error "5sboot.sh failed."
+        pause
+        return
+    }
+
+    success "iOS $tag boot script finished."
+    pause
+}
+
+
 ios10_prepare_tether_boot_files() {
     local target_ipsw="$1"
     local shsh_path="$2"
@@ -2405,6 +2558,7 @@ ios10_prepare_tether_boot_files() {
     run_cmd "$BOOT/img4" -i "$w/$dtree_file" -o "$BOOT/DeviceTree.img4" -T rdtr -M "$w/im4m" || return
     run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -M "$w/im4m" || return
 
+    ios_bootset_save "10.2.1" "$DEVICE_TYPE" "$BOARD" || return
     success "iOS 10.2.1 tether boot files were written to bin2boot."
 }
 
@@ -2546,6 +2700,543 @@ ios10_run_futurerestore_recovery() {
 }
 
 
+
+ios11_patch_asr_ramdisk_file() {
+    local src_dmg="$1"
+    local out_im4p="$2"
+    local w="$WORK/ios11_ramdisk"
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    run_cmd "$BOOT/img4" -i "$src_dmg" -o "$w/ramdisk.raw" || return
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" extract usr/sbin/asr "$w/asr" || return
+    run_cmd "$BOOT/asr64_patcher" "$w/asr" "$w/asr_patched" || return
+
+    "$BOOT/ldid" -e "$w/asr" > "$w/ents.plist" || true
+    if [[ -s "$w/ents.plist" ]] && grep -q "<plist" "$w/ents.plist"; then
+        run_cmd "$BOOT/ldid" -S"$w/ents.plist" "$w/asr_patched" || return
+    else
+        run_cmd "$BOOT/ldid" -S "$w/asr_patched" || return
+    fi
+
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" rm usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" add "$w/asr_patched" usr/sbin/asr || return
+    sleep 2
+    run_cmd "$BOOT/hfsplus" "$w/ramdisk.raw" chmod 100755 usr/sbin/asr || return
+    run_cmd "$BOOT/img4" -i "$w/ramdisk.raw" -o "$out_im4p" -A -T rdsk || return
+}
+
+ios11_make_tether_restore_files() {
+    local target_ipsw="$1"
+    local latest_ipsw="$2"
+    local restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/11.3"
+    local w="$WORK/ios11_make"
+    local target="$w/target"
+    local latest="$w/latest"
+    local target_kernel="$target/kernelcache.release.iphone6"
+    local restore_ramdisk=""
+
+    rm -rf "$w"
+    mkdir -p "$target" "$latest" "$restoredir"
+
+    info "Unpacking IPSWs..."
+    run_cmd unzip -q "$target_ipsw" -d "$target" || return
+    run_cmd unzip -q "$latest_ipsw" -d "$latest" || return
+
+    if [[ ! -f "$target_kernel" ]]; then
+        target_kernel="$(find "$target" -maxdepth 1 -type f -name "kernelcache.release.*" | head -n 1)"
+    fi
+    check_file "$target_kernel"
+
+    info "Adding latest all_flash files..."
+    find "$target/Firmware/all_flash/" -type f ! -name "*DeviceTree*" -exec rm -f {} + 2>/dev/null || true
+    find "$latest/Firmware/all_flash/" -type f ! -name "*DeviceTree*" -exec cp {} "$target/Firmware/all_flash/" \; || return
+
+    info "Building custom IPSW..."
+    rm -f "$restoredir/custom.ipsw"
+    (
+        cd "$target" || exit 1
+        zip -0 -q -r "$restoredir/custom.ipsw" *
+    ) || return
+
+    restore_ramdisk="$(ios10_find_dmg "$target" smallest)"
+    if [[ -z "$restore_ramdisk" ]]; then
+        error "Could not find restore ramdisk DMG."
+        return 1
+    fi
+
+    info "Making kernel file..."
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$w/kernel.raw" || return
+    run_cmd "$BIN/KPlooshFinder" "$w/kernel.raw" "$w/kernel.patched" || return
+    run_cmd "$BOOT/kerneldiff" "$w/kernel.raw" "$w/kernel.patched" "$w/kernel.diff" || return
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" -J || \
+        run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" || return
+
+    info "Making ramdisk file..."
+    ios11_patch_asr_ramdisk_file "$restore_ramdisk" "$restoredir/ramdisk.im4p" || return
+
+    rm -f "$restoredir/updateramdisk.im4p"
+    echo "v1_ios11_target_base" > "$restoredir/.5sd7_ios11_custom_method"
+
+    success "iOS 11.3 restore files ready in $restoredir"
+}
+
+ios11_unzip_first() {
+    local ipsw="$1"
+    local outdir="$2"
+    shift 2
+    local p
+
+    for p in "$@"; do
+        if unzip -l "$ipsw" "$p" >/dev/null 2>&1; then
+            unzip -j "$ipsw" "$p" -d "$outdir" >/dev/null && return 0
+        fi
+    done
+
+    return 1
+}
+
+ios11_prepare_tether_boot_files() {
+    local target_ipsw="$1"
+    local shsh_path="$2"
+    local w="$WORK/ios11_boot"
+    local restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/11.3"
+    local ibss_file="iBSS.iphone6.RELEASE.im4p"
+    local ibec_file="iBEC.iphone6.RELEASE.im4p"
+    local dtree_file="DeviceTree.${BOARD}.im4p"
+    local kernel_file="kernelcache.release.iphone6"
+    local ibss_key ibec_key
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    ibss_key="$(ios10_enc_key "11.3" "IBSS")" || return
+    ibec_key="$(ios10_enc_key "11.3" "IBEC")" || return
+
+    run_cmd "$BOOT/img4tool" -s "$shsh_path" -e -m "$w/im4m" || return
+
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibss_file" -d "$w" >/dev/null || return
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibec_file" -d "$w" >/dev/null || return
+    ios11_unzip_first "$target_ipsw" "$w" \
+        "Firmware/all_flash/$dtree_file" \
+        "Firmware/all_flash/all_flash.${BOARD}.production/$dtree_file" || return
+
+    unzip -j "$target_ipsw" "$kernel_file" -d "$w" >/dev/null || {
+        kernel_file="$(unzip -Z1 "$target_ipsw" 2>/dev/null | grep -E '^kernelcache\.release\.' | head -n 1)"
+        [[ -n "$kernel_file" ]] || return 1
+        unzip -j "$target_ipsw" "$kernel_file" -d "$w" >/dev/null || return
+        kernel_file="$(basename "$kernel_file")"
+    }
+
+    run_cmd "$BOOT/img4" -i "$w/$ibss_file" -o "$w/iBSS.raw" -k "$ibss_key" || return
+    run_cmd "$BOOT/img4" -i "$w/$ibec_file" -o "$w/iBEC.raw" -k "$ibec_key" || return
+
+    run_cmd "$BOOT/kairos" "$w/iBSS.raw" "$w/iBSS.patched" || return
+    run_cmd "$BOOT/kairos" "$w/iBEC.raw" "$w/iBEC.patched" -b "-v" || return
+
+    rm -f "$BOOT/iBSS.img4" "$BOOT/iBEC.img4" "$BOOT/DeviceTree.img4" "$BOOT/Kernelcache.img4"
+
+    run_cmd "$BOOT/img4" -i "$w/iBSS.patched" -o "$BOOT/iBSS.img4" -A -T ibss -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/iBEC.patched" -o "$BOOT/iBEC.img4" -A -T ibec -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/$dtree_file" -o "$BOOT/DeviceTree.img4" -T rdtr -M "$w/im4m" || return
+
+    if [[ -f "$restoredir/kernel.im4p" ]]; then
+        info "Using patched iOS 11 restore kernel for tether boot."
+        run_cmd "$BOOT/img4" -i "$restoredir/kernel.im4p" -o "$BOOT/Kernelcache.img4" -T rkrn -M "$w/im4m" || return
+    else
+        warn "Patched restore kernel missing. Building patched iOS 11 boot kernel now."
+        run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$w/kernel.raw" || return
+        run_cmd "$BIN/KPlooshFinder" "$w/kernel.raw" "$w/kernel.patched" || return
+        run_cmd "$BOOT/kerneldiff" "$w/kernel.raw" "$w/kernel.patched" "$w/kernel.diff" || return
+        run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -P "$w/kernel.diff" -M "$w/im4m" -J || \
+            run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -P "$w/kernel.diff" -M "$w/im4m" || return
+    fi
+
+    ios_bootset_save "11.3" "$DEVICE_TYPE" "$BOARD" || return
+    success "iOS 11.3 tether boot files were written to bin2boot."
+}
+
+ios11_113_restore() {
+    header
+    warn "iPhone 5s iOS 11.3 tethered restore path."
+    warn "This uses latest signed 12.5.8 blobs/SEP with an 11.3 custom restore payload."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="11.3"
+    TARGET_IOS_DISPLAY="11.3"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 11.3 IPSW: ")"
+    echo
+    IOS10_LATEST_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.5.8/latest IPSW: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_LATEST_IPSW"
+
+    ios10_set_build_from_ipsw_or_default "$IOS10_TARGET_IPSW" "15E216"
+    IOS10_LATEST_VERSION="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductVersion)"
+    [[ -n "$IOS10_LATEST_VERSION" ]] || IOS10_LATEST_VERSION="12.5.8"
+    IOS10_LATEST_BUILD="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductBuildVersion)"
+    [[ -n "$IOS10_LATEST_BUILD" ]] || IOS10_LATEST_BUILD="16H88"
+
+    ios10_detect_or_prompt_ecid || { pause; return; }
+
+    pwn_dfu_loop "$BIN" "yes" || { pause; return; }
+    cd "$SCRIPT_DIR" || return
+
+    ios10_fetch_shsh_for_latest || { pause; return; }
+
+    restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/11.3"
+    if [[ ! -f "$restoredir/custom.ipsw" || ! -f "$restoredir/ramdisk.im4p" || ! -f "$restoredir/kernel.im4p" || ! -f "$restoredir/.5sd7_ios11_custom_method" ]] || ! grep -q "v1_ios11_target_base" "$restoredir/.5sd7_ios11_custom_method" 2>/dev/null; then
+        warn "Rebuilding iOS 11.3 restore files."
+        rm -rf "$restoredir"
+        ios11_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+    else
+        warn "Existing iOS 11.3 restore files found."
+        read -rp "Rebuild them? (y/n): " rebuild
+        if [[ "$rebuild" == "y" || "$rebuild" == "Y" ]]; then
+            rm -rf "$restoredir"
+            ios11_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+        fi
+    fi
+
+    IOS10_RESTORE_BUILD="$(ios10_parse_plist_value "$restoredir/custom.ipsw" ProductBuildVersion)"
+    [[ -n "$IOS10_RESTORE_BUILD" ]] || IOS10_RESTORE_BUILD="$IOS10_BUILD"
+    info "Using iBoot tag: $IOS10_RESTORE_BUILD"
+
+    ios10_prepatch_restore_iboots "$IOS10_TARGET_IPSW" "11.3" "$IOS10_RESTORE_BUILD" || { pause; return; }
+
+    ios10_run_futurerestore_retry \
+        -t "$IOS10_SHSH_PATH" --use-pwndfu --skip-blob \
+        --rdsk "$restoredir/ramdisk.im4p" \
+        --custom-latest "$IOS10_LATEST_VERSION" \
+        --rkrn "$restoredir/kernel.im4p" --latest-sep \
+        --latest-baseband --no-rsep "$restoredir/custom.ipsw"
+
+    fr_status=$?
+    if [[ "$fr_status" -ne 0 ]]; then
+        error "futurerestore failed with exit code $fr_status"
+        warn "Not building boot files because the restore did not finish."
+        pause
+        return
+    fi
+
+    success "iOS 11.3 tethered restore finished."
+    ios11_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || {
+        warn "Restore finished, but boot file build failed."
+        pause
+        return
+    }
+
+    warn "You can now use the iOS 11 tether boot option, or run it now."
+    read -rp "Boot now? (y/n): " bootnow
+    if [[ "$bootnow" == "y" || "$bootnow" == "Y" ]]; then
+        ios11_boot
+    else
+        pause
+    fi
+}
+
+ios11_boot() {
+    ios_boot_marked
+}
+
+ios10_build_boot_only() {
+    header
+    warn "Build iOS 10.2.1 tether boot files only."
+    warn "This does not restore. It only rebuilds and marks the boot files."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="10.2.1"
+    TARGET_IOS_DISPLAY="10.2.1"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 10.2.1 IPSW: ")"
+    echo
+    IOS10_SHSH_PATH="$(read_drag_path "Drag the latest signed iOS 12.5.8 SHSH2 used for tether boot: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_SHSH_PATH"
+
+    ios10_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || { pause; return; }
+
+    success "iOS 10.2.1 boot files rebuilt and marked."
+    pause
+}
+
+ios11_build_boot_only() {
+    header
+    warn "Build iOS 11.3 tether boot files only."
+    warn "This does not restore. It only rebuilds and marks the boot files."
+    warn "If restorefiles are still present, it will use the patched restore kernel."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="11.3"
+    TARGET_IOS_DISPLAY="11.3"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 11.3 IPSW: ")"
+    echo
+    IOS10_SHSH_PATH="$(read_drag_path "Drag the latest signed iOS 12.5.8 SHSH2 used for tether boot: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_SHSH_PATH"
+
+    ios11_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || { pause; return; }
+
+    success "iOS 11.3 boot files rebuilt and marked."
+    pause
+}
+
+
+ios12_make_tether_restore_files() {
+    local target_ipsw="$1"
+    local latest_ipsw="$2"
+    local restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/12.0"
+    local w="$WORK/ios12_make"
+    local target="$w/target"
+    local latest="$w/latest"
+    local target_kernel="$target/kernelcache.release.iphone6"
+    local restore_ramdisk=""
+
+    rm -rf "$w"
+    mkdir -p "$target" "$latest" "$restoredir"
+
+    info "Unpacking IPSWs..."
+    run_cmd unzip -q "$target_ipsw" -d "$target" || return
+    run_cmd unzip -q "$latest_ipsw" -d "$latest" || return
+
+    if [[ ! -f "$target_kernel" ]]; then
+        target_kernel="$(find "$target" -maxdepth 1 -type f -name "kernelcache.release.*" | head -n 1)"
+    fi
+    check_file "$target_kernel"
+
+    info "Adding latest all_flash files..."
+    find "$target/Firmware/all_flash/" -type f ! -name "*DeviceTree*" -exec rm -f {} + 2>/dev/null || true
+    find "$latest/Firmware/all_flash/" -type f ! -name "*DeviceTree*" -exec cp {} "$target/Firmware/all_flash/" \; || return
+
+    info "Building custom IPSW..."
+    rm -f "$restoredir/custom.ipsw"
+    (
+        cd "$target" || exit 1
+        zip -0 -q -r "$restoredir/custom.ipsw" *
+    ) || return
+
+    restore_ramdisk="$(ios10_find_dmg "$target" smallest)"
+    if [[ -z "$restore_ramdisk" ]]; then
+        error "Could not find restore ramdisk DMG."
+        return 1
+    fi
+
+    info "Making kernel file..."
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$w/kernel.raw" || return
+    run_cmd "$BIN/KPlooshFinder" "$w/kernel.raw" "$w/kernel.patched" || return
+    run_cmd "$BOOT/kerneldiff" "$w/kernel.raw" "$w/kernel.patched" "$w/kernel.diff" || return
+    run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" -J || \
+        run_cmd "$BOOT/img4" -i "$target_kernel" -o "$restoredir/kernel.im4p" -T rkrn -P "$w/kernel.diff" || return
+
+    info "Making ramdisk file..."
+    ios11_patch_asr_ramdisk_file "$restore_ramdisk" "$restoredir/ramdisk.im4p" || return
+
+    rm -f "$restoredir/updateramdisk.im4p"
+    echo "v1_ios12_target_base" > "$restoredir/.5sd7_ios12_custom_method"
+
+    success "iOS 12.0 restore files ready in $restoredir"
+}
+
+ios12_prepare_tether_boot_files() {
+    local target_ipsw="$1"
+    local shsh_path="$2"
+    local w="$WORK/ios12_boot"
+    local restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/12.0"
+    local ibss_file="iBSS.iphone6.RELEASE.im4p"
+    local ibec_file="iBEC.iphone6.RELEASE.im4p"
+    local dtree_file="DeviceTree.${BOARD}.im4p"
+    local kernel_file="kernelcache.release.iphone6"
+    local ibss_key ibec_key
+
+    rm -rf "$w"
+    mkdir -p "$w"
+
+    ibss_key="$(ios10_enc_key "12.0" "IBSS")" || return
+    ibec_key="$(ios10_enc_key "12.0" "IBEC")" || return
+
+    run_cmd "$BOOT/img4tool" -s "$shsh_path" -e -m "$w/im4m" || return
+
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibss_file" -d "$w" >/dev/null || return
+    unzip -j "$target_ipsw" "Firmware/dfu/$ibec_file" -d "$w" >/dev/null || return
+    ios11_unzip_first "$target_ipsw" "$w" \
+        "Firmware/all_flash/$dtree_file" \
+        "Firmware/all_flash/all_flash.${BOARD}.production/$dtree_file" || return
+
+    unzip -j "$target_ipsw" "$kernel_file" -d "$w" >/dev/null || {
+        kernel_file="$(unzip -Z1 "$target_ipsw" 2>/dev/null | grep -E '^kernelcache\.release\.' | head -n 1)"
+        [[ -n "$kernel_file" ]] || return 1
+        unzip -j "$target_ipsw" "$kernel_file" -d "$w" >/dev/null || return
+        kernel_file="$(basename "$kernel_file")"
+    }
+
+    run_cmd "$BOOT/img4" -i "$w/$ibss_file" -o "$w/iBSS.raw" -k "$ibss_key" || return
+    run_cmd "$BOOT/img4" -i "$w/$ibec_file" -o "$w/iBEC.raw" -k "$ibec_key" || return
+
+    run_cmd "$BOOT/kairos" "$w/iBSS.raw" "$w/iBSS.patched" || return
+    run_cmd "$BOOT/kairos" "$w/iBEC.raw" "$w/iBEC.patched" -b "-v" || return
+
+    rm -f "$BOOT/iBSS.img4" "$BOOT/iBEC.img4" "$BOOT/DeviceTree.img4" "$BOOT/Kernelcache.img4"
+
+    run_cmd "$BOOT/img4" -i "$w/iBSS.patched" -o "$BOOT/iBSS.img4" -A -T ibss -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/iBEC.patched" -o "$BOOT/iBEC.img4" -A -T ibec -M "$w/im4m" || return
+    run_cmd "$BOOT/img4" -i "$w/$dtree_file" -o "$BOOT/DeviceTree.img4" -T rdtr -M "$w/im4m" || return
+
+    if [[ -f "$restoredir/kernel.im4p" ]]; then
+        info "Using patched iOS 12 restore kernel for tether boot."
+        run_cmd "$BOOT/img4" -i "$restoredir/kernel.im4p" -o "$BOOT/Kernelcache.img4" -T rkrn -M "$w/im4m" || return
+    else
+        warn "Patched restore kernel missing. Building patched iOS 12 boot kernel now."
+        run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$w/kernel.raw" || return
+        run_cmd "$BIN/KPlooshFinder" "$w/kernel.raw" "$w/kernel.patched" || return
+        run_cmd "$BOOT/kerneldiff" "$w/kernel.raw" "$w/kernel.patched" "$w/kernel.diff" || return
+        run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -P "$w/kernel.diff" -M "$w/im4m" -J || \
+            run_cmd "$BOOT/img4" -i "$w/$kernel_file" -o "$BOOT/Kernelcache.img4" -T rkrn -P "$w/kernel.diff" -M "$w/im4m" || return
+    fi
+
+    ios_bootset_save "12.0" "$DEVICE_TYPE" "$BOARD" || return
+    success "iOS 12.0 tether boot files were written to bin2boot."
+}
+
+ios12_120_restore() {
+    header
+    warn "iPhone 5s iOS 12.0 tethered restore path."
+    warn "This uses latest signed 12.5.8 blobs/SEP with a 12.0 custom restore payload."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="12.0"
+    TARGET_IOS_DISPLAY="12.0"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.0 IPSW: ")"
+    echo
+    IOS10_LATEST_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.5.8/latest IPSW: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_LATEST_IPSW"
+
+    ios10_set_build_from_ipsw_or_default "$IOS10_TARGET_IPSW" "16A366"
+    IOS10_LATEST_VERSION="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductVersion)"
+    [[ -n "$IOS10_LATEST_VERSION" ]] || IOS10_LATEST_VERSION="12.5.8"
+    IOS10_LATEST_BUILD="$(ios10_parse_plist_value "$IOS10_LATEST_IPSW" ProductBuildVersion)"
+    [[ -n "$IOS10_LATEST_BUILD" ]] || IOS10_LATEST_BUILD="16H88"
+
+    ios10_detect_or_prompt_ecid || { pause; return; }
+
+    pwn_dfu_loop "$BIN" "yes" || { pause; return; }
+    cd "$SCRIPT_DIR" || return
+
+    ios10_fetch_shsh_for_latest || { pause; return; }
+
+    restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/12.0"
+    if [[ ! -f "$restoredir/custom.ipsw" || ! -f "$restoredir/ramdisk.im4p" || ! -f "$restoredir/kernel.im4p" || ! -f "$restoredir/.5sd7_ios12_custom_method" ]] || ! grep -q "v1_ios12_target_base" "$restoredir/.5sd7_ios12_custom_method" 2>/dev/null; then
+        warn "Rebuilding iOS 12.0 restore files."
+        rm -rf "$restoredir"
+        ios12_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+    else
+        warn "Existing iOS 12.0 restore files found."
+        read -rp "Rebuild them? (y/n): " rebuild
+        if [[ "$rebuild" == "y" || "$rebuild" == "Y" ]]; then
+            rm -rf "$restoredir"
+            ios12_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
+        fi
+    fi
+
+    IOS10_RESTORE_BUILD="$(ios10_parse_plist_value "$restoredir/custom.ipsw" ProductBuildVersion)"
+    [[ -n "$IOS10_RESTORE_BUILD" ]] || IOS10_RESTORE_BUILD="$IOS10_BUILD"
+    info "Using iBoot tag: $IOS10_RESTORE_BUILD"
+
+    ios10_prepatch_restore_iboots "$IOS10_TARGET_IPSW" "12.0" "$IOS10_RESTORE_BUILD" || { pause; return; }
+
+    ios10_run_futurerestore_retry \
+        -t "$IOS10_SHSH_PATH" --use-pwndfu --skip-blob \
+        --rdsk "$restoredir/ramdisk.im4p" \
+        --custom-latest "$IOS10_LATEST_VERSION" \
+        --rkrn "$restoredir/kernel.im4p" --latest-sep \
+        --latest-baseband --no-rsep "$restoredir/custom.ipsw"
+
+    fr_status=$?
+    if [[ "$fr_status" -ne 0 ]]; then
+        error "futurerestore failed with exit code $fr_status"
+        warn "Not building boot files because the restore did not finish."
+        pause
+        return
+    fi
+
+    success "iOS 12.0 tethered restore finished."
+    ios12_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || {
+        warn "Restore finished, but boot file build failed."
+        pause
+        return
+    }
+
+    warn "You can now use the marked tether boot option, or run it now."
+    read -rp "Boot now? (y/n): " bootnow
+    if [[ "$bootnow" == "y" || "$bootnow" == "Y" ]]; then
+        ios_boot_marked
+    else
+        pause
+    fi
+}
+
+ios12_build_boot_only() {
+    header
+    warn "Build iOS 12.0 tether boot files only."
+    warn "This does not restore. It only rebuilds and marks the boot files."
+    warn "If restorefiles are still present, it will use the patched restore kernel."
+    echo
+    read -rp "Continue? Type YES: " confirm
+    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
+
+    ios10_select_5s_model || return
+    ensure_ios10_tools || return
+
+    TARGET_IOS="12.0"
+    TARGET_IOS_DISPLAY="12.0"
+
+    echo
+    IOS10_TARGET_IPSW="$(read_drag_path "Drag the $DEVICE_TYPE iPhone 5s iOS 12.0 IPSW: ")"
+    echo
+    IOS10_SHSH_PATH="$(read_drag_path "Drag the latest signed iOS 12.5.8 SHSH2 used for tether boot: ")"
+
+    check_file "$IOS10_TARGET_IPSW"
+    check_file "$IOS10_SHSH_PATH"
+
+    ios12_prepare_tether_boot_files "$IOS10_TARGET_IPSW" "$IOS10_SHSH_PATH" || { pause; return; }
+
+    success "iOS 12.0 boot files rebuilt and marked."
+    pause
+}
+
+
 ios10_1021_restore() {
     header
     warn "iPhone 5s iOS 10.2.1 tethered restore path."
@@ -2585,7 +3276,7 @@ ios10_1021_restore() {
     ios10_fetch_shsh_for_latest || { pause; return; }
 
     restoredir="$SCRIPT_DIR/restorefiles/$IOS10_IDENTIFIER/10.2.1"
-    if [[ ! -f "$restoredir/custom.ipsw" || ! -f "$restoredir/ramdisk.im4p" || ! -f "$restoredir/kernel.im4p" || ! -f "$restoredir/.5sd7_ios10_custom_method" ]] || ! grep -q "v5_surreal_target_base" "$restoredir/.5sd7_ios10_custom_method" 2>/dev/null; then
+    if [[ ! -f "$restoredir/custom.ipsw" || ! -f "$restoredir/ramdisk.im4p" || ! -f "$restoredir/kernel.im4p" || ! -f "$restoredir/.5sd7_ios10_custom_method" ]] || ! grep -q "v5_target_base_restore" "$restoredir/.5sd7_ios10_custom_method" 2>/dev/null; then
         warn "Rebuilding iOS 10 restore files."
         rm -rf "$restoredir"
         ios10_make_tether_restore_files "$IOS10_TARGET_IPSW" "$IOS10_LATEST_IPSW" || { pause; return; }
@@ -2700,40 +3391,8 @@ ios10_1033_restore() {
 }
 
 ios10_boot() {
-    header
-    check_boot_tools
-    make_executable
-
-    check_file "$BOOT/iBSS.img4"
-    check_file "$BOOT/iBEC.img4"
-    check_file "$BOOT/DeviceTree.img4"
-    check_file "$BOOT/Kernelcache.img4"
-
-    warn "This boots the iOS 10 boot files currently in bin2boot."
-    read -rp "Continue? Type YES: " confirm
-    [[ "$confirm" == "YES" ]] || { warn "Cancelled."; pause; return; }
-
-    pwn_dfu_loop "$BOOT" "yes" || {
-        error "pwnDFU/reset failed."
-        pause
-        return
-    }
-
-    cd "$BOOT" || die "Could not cd to bin2boot"
-    run_cmd ./5sboot.sh || {
-        error "5sboot.sh failed."
-        pause
-        return
-    }
-
-    success "iOS 10 boot script finished."
-    pause
+    ios_boot_marked
 }
-
-
-#########################################
-# main menui
-#########################################
 
 main_menu() {
     while true; do
@@ -2748,6 +3407,8 @@ main_menu() {
         echo " - iOS 7.0.6, 7.1.0, 7.1.1, 7.1.2, 8.0, 8.4, 9.3.2, 9.3.4"
         echo " - iOS 10.2.1 tethered restore"
         echo " - iOS 10.3.3 OTA untethered restore"
+        echo " - iOS 11.3 tethered restore"
+        echo " - iOS 12.0 tethered restore"
         echo
         echo "Unsupported: below 7.0.6, iPhone 5c, other devices, and random in-between builds this script does not handle."
         echo
@@ -2763,7 +3424,12 @@ main_menu() {
         echo "8) About / Requirements"
         echo "9) iOS 10.2.1 Tethered Restore"
         echo "10) iOS 10.3.3 OTA Untethered Restore"
-        echo "11) Tether Boot iOS 10 Files"
+        echo "11) Tether Boot Marked iOS 10/11/12 Files"
+        echo "12) iOS 11.3 Tethered Restore"
+        echo "13) Build iOS 10.2.1 Boot Files Only"
+        echo "14) Build iOS 11.3 Boot Files Only"
+        echo "15) iOS 12.0 Tethered Restore"
+        echo "16) Build iOS 12.0 Boot Files Only"
         echo "0) Exit"
         echo
 
@@ -2780,7 +3446,12 @@ main_menu() {
             8) about_screen; restore_active_restore_tools_silent ;;
             9) ios10_1021_restore; restore_active_restore_tools_silent ;;
             10) ios10_1033_restore; restore_active_restore_tools_silent ;;
-            11) ios10_boot; restore_active_restore_tools_silent ;;
+            11) ios_boot_marked; restore_active_restore_tools_silent ;;
+            12) ios11_113_restore; restore_active_restore_tools_silent ;;
+            13) ios10_build_boot_only; restore_active_restore_tools_silent ;;
+            14) ios11_build_boot_only; restore_active_restore_tools_silent ;;
+            15) ios12_120_restore; restore_active_restore_tools_silent ;;
+            16) ios12_build_boot_only; restore_active_restore_tools_silent ;;
             0) restore_active_restore_tools_silent; exit 0 ;;
             *) error "Invalid choice"; sleep 1 ;;
         esac
