@@ -1,4 +1,4 @@
-# 5sd7 Tethered Downgrade Tool for iPhone 5s (iOS 7.0.6 – 10.3.3)
+# 5sd7 Tethered Downgrade Tool for iPhone 5s (iOS 7.0.6 – 12.5.8)
 
 > [!IMPORTANT]
 > Some third-party tools are **downloaded automatically** by 5sd7 when required.
