@@ -136,10 +136,10 @@ ensure_legacy_ios_kit_macos_libs() {
         die "The Legacy iOS Kit dylib startup check only supports macOS."
     fi
 
-    command -v sudo >/dev/null 2>&1 || die "sudo is required to check and install Legacy iOS Kit dylibs."
+    command -v sudo >/dev/null 2>&1 || die "sudo is required to check and install legacy ios kit dylibs."
 
     # Authenticate once, then use sudo for every /usr/local/lib check as requested.
-    sudo -v || die "sudo authentication failed."
+    sudo -v || die "sudo authentication failed. sudo is required to check and install dylibs"
 
     for lib in "${required_libs[@]}"; do
         if ! sudo test -f "$install_dir/$lib"; then
