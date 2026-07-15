@@ -5,7 +5,7 @@
 # gsm/cdma ipsw builder restore and bot
 #########################################
 
-VERSION="3.0-beta2"
+VERSION="3.0"
 
 #########################################
 # colors 
@@ -107,6 +107,106 @@ die() {
     error "$1"
     echo
     exit 1
+}
+
+
+#########################################
+#  dylib fucking installer
+#########################################
+
+ensure_legacy_ios_kit_macos_libs() {
+    local install_dir="/usr/local/lib"
+    local archive_url="https://github.com/LukeZGD/Legacy-iOS-Kit/archive/refs/heads/main.zip"
+    local tmpdir archive source_dir
+    local missing=0
+    local lib
+
+    local required_libs=(
+        "libgeneral.0.dylib"
+        "libideviceactivation-1.0.2.dylib"
+        "libimg4tool.0.dylib"
+        "libimobiledevice-1.0.6.dylib"
+        "libimobiledevice-glue-1.0.0.dylib"
+        "libirecovery-1.0.3.dylib"
+        "libplist-2.0.4.dylib"
+        "libusbmuxd-2.0.6.dylib"
+    )
+
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "The Legacy iOS Kit dylib startup check only supports macOS."
+    fi
+
+    command -v sudo >/dev/null 2>&1 || die "sudo is required to check and install Legacy iOS Kit dylibs."
+
+    # Authenticate once, then use sudo for every /usr/local/lib check as requested.
+    sudo -v || die "sudo authentication failed."
+
+    for lib in "${required_libs[@]}"; do
+        if ! sudo test -f "$install_dir/$lib"; then
+            missing=1
+        fi
+    done
+
+    # All eight required dylibs exist, so continue startup without downloading.
+    if [[ "$missing" -eq 0 ]]; then
+        return 0
+    fi
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to download Legacy iOS Kit."
+    command -v unzip >/dev/null 2>&1 || die "unzip is required to extract Legacy iOS Kit."
+
+    warn "One or more required Legacy iOS Kit dylibs are missing."
+    info "Downloading the complete Legacy iOS Kit macOS library folder..."
+
+    tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/5sd7-legacy-ios-kit.XXXXXX")" || \
+        die "Could not create a temporary download folder."
+    archive="$tmpdir/Legacy-iOS-Kit-main.zip"
+
+    if ! curl -fL --retry 3 --connect-timeout 20 -o "$archive" "$archive_url"; then
+        rm -rf "$tmpdir"
+        die "Failed to download Legacy iOS Kit from GitHub."
+    fi
+
+    if ! unzip -q "$archive" -d "$tmpdir"; then
+        rm -rf "$tmpdir"
+        die "Failed to extract the Legacy iOS Kit archive."
+    fi
+
+    source_dir="$(find "$tmpdir" -type d -path '*/bin/macos/lib' -print -quit)"
+    if [[ -z "$source_dir" || ! -d "$source_dir" ]]; then
+        rm -rf "$tmpdir"
+        die "Could not find Legacy-iOS-Kit/bin/macos/lib in the downloaded archive."
+    fi
+
+    # Refuse to install a partial or incomplete download.
+    for lib in "${required_libs[@]}"; do
+        if [[ ! -f "$source_dir/$lib" ]]; then
+            rm -rf "$tmpdir"
+            die "Downloaded Legacy iOS Kit library folder is incomplete. Missing: $lib"
+        fi
+    done
+
+    info "Installing every file from Legacy-iOS-Kit/bin/macos/lib into $install_dir..."
+    sudo mkdir -p "$install_dir" || {
+        rm -rf "$tmpdir"
+        die "Could not create $install_dir."
+    }
+
+    sudo cp -R "$source_dir/." "$install_dir/" || {
+        rm -rf "$tmpdir"
+        die "Failed to copy Legacy iOS Kit libraries into $install_dir."
+    }
+
+    rm -rf "$tmpdir"
+
+    # Verify the complete required set after installation, not merely a partial copy.
+    for lib in "${required_libs[@]}"; do
+        if ! sudo test -f "$install_dir/$lib"; then
+            die "Legacy iOS Kit library installation is incomplete. Missing: $install_dir/$lib"
+        fi
+    done
+
+    success "All required Legacy iOS Kit dylibs are installed in $install_dir."
 }
 
 run_cmd() {
@@ -3488,4 +3588,5 @@ main_menu() {
     done
 }
 
+ensure_legacy_ios_kit_macos_libs
 main_menu
