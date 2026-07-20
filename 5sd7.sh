@@ -5,7 +5,7 @@
 # gsm/cdma ipsw builder restore and bot
 #########################################
 
-VERSION="3.0"
+VERSION="3.1"
 
 #########################################
 # colors 
@@ -111,6 +111,78 @@ die() {
 
 
 #########################################
+# startup dependency checks
+#########################################
+
+ensure_xcode_command_line_tools() {
+    if [[ "$(uname)" != "Darwin" ]]; then
+        die "Xcode Command Line Tools startup check only supports macOS."
+    fi
+
+    if xcode-select -p >/dev/null 2>&1; then
+        return 0
+    fi
+
+    warn "Xcode Command Line Tools are not installed."
+    info "Opening the Xcode Command Line Tools installer..."
+
+    xcode-select --install >/dev/null 2>&1 || true
+
+    info "Complete the installer window. This script will continue automatically when installation finishes."
+    while ! xcode-select -p >/dev/null 2>&1; do
+        sleep 5
+    done
+
+    success "Xcode Command Line Tools are installed."
+}
+
+ensure_homebrew() {
+    if command -v brew >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [[ -x "/opt/homebrew/bin/brew" ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+        return 0
+    fi
+
+    if [[ -x "/usr/local/bin/brew" ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+        return 0
+    fi
+
+    command -v curl >/dev/null 2>&1 || die "curl is required to install Homebrew."
+
+    warn "Homebrew is not installed."
+    info "Installing Homebrew..."
+
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || \
+        die "Homebrew installation failed."
+
+    if [[ -x "/opt/homebrew/bin/brew" ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x "/usr/local/bin/brew" ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+
+    command -v brew >/dev/null 2>&1 || die "Homebrew was installed but could not be added to PATH."
+    success "Homebrew is installed."
+}
+
+ensure_brew_libirecovery() {
+    ensure_homebrew
+
+    if brew list --formula libirecovery >/dev/null 2>&1; then
+        return 0
+    fi
+
+    warn "Homebrew libirecovery is not installed."
+    info "Installing libirecovery with Homebrew..."
+    brew install libirecovery || die "Failed to install libirecovery with Homebrew."
+    success "Homebrew libirecovery is installed."
+}
+
+#########################################
 #  dylib fucking installer
 #########################################
 
@@ -178,7 +250,7 @@ ensure_legacy_ios_kit_macos_libs() {
         die "Could not find Legacy-iOS-Kit/bin/macos/lib in the downloaded archive."
     fi
 
-    # Refuse to install a partial or incomplete download.
+    # refuse to install a partial or incomplete download.
     for lib in "${required_libs[@]}"; do
         if [[ ! -f "$source_dir/$lib" ]]; then
             rm -rf "$tmpdir"
@@ -199,7 +271,7 @@ ensure_legacy_ios_kit_macos_libs() {
 
     rm -rf "$tmpdir"
 
-    # Verify the complete required set after installation, not merely a partial copy.
+    # verif the complete required set after installation, not a partial copy.
     for lib in "${required_libs[@]}"; do
         if ! sudo test -f "$install_dir/$lib"; then
             die "Legacy iOS Kit library installation is incomplete. Missing: $install_dir/$lib"
@@ -3588,5 +3660,7 @@ main_menu() {
     done
 }
 
+ensure_xcode_command_line_tools
 ensure_legacy_ios_kit_macos_libs
+ensure_brew_libirecovery
 main_menu
