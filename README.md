@@ -44,6 +44,7 @@ Supported firmware:
 * iOS 9.3.4
 * iOS 10.2.1
 * iOS 10.3.3
+ 
 
 Features include:
 
@@ -185,3 +186,9 @@ Finally, thanks to the many developers and researchers whose work on checkm8, Im
 5sd7 itself is licensed under the MIT License.
 
 Third-party software remains under the licenses provided by its respective authors. Automatic downloading of third-party tools does **not** transfer ownership or change the original licensing of those projects.
+
+
+
+
+
+if you are reading thjs then hello
